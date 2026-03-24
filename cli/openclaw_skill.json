@@ -1,0 +1,41 @@
+{
+  "name": "yex-trader",
+  "version": "0.1.0",
+  "description": "Autonomous Hyperliquid trading agent — deterministic and LLM-powered strategies for HL perps and YEX markets",
+  "repository": "https://github.com/Nunchi-trade/agent-cli",
+  "actions": [
+    {
+      "name": "run_strategy",
+      "description": "Start autonomous trading with a strategy",
+      "command": "cd ~/agent-cli && python3 -m cli.main run {strategy} -i {instrument} --tick {tick_interval} --max-ticks {max_ticks}",
+      "params": ["strategy", "instrument", "tick_interval", "max_ticks"]
+    },
+    {
+      "name": "run_strategy_mock",
+      "description": "Run a strategy in mock mode (no HL connection needed)",
+      "command": "cd ~/agent-cli && python3 -m cli.main run {strategy} --mock --max-ticks {max_ticks} --tick {tick_interval}",
+      "params": ["strategy", "max_ticks", "tick_interval"]
+    },
+    {
+      "name": "check_status",
+      "description": "Show positions, PnL, and risk state",
+      "command": "cd ~/agent-cli && python3 -m cli.main status"
+    },
+    {
+      "name": "place_trade",
+      "description": "Place a single manual order",
+      "command": "cd ~/agent-cli && python3 -m cli.main trade {instrument} {side} {size}",
+      "params": ["instrument", "side", "size"]
+    },
+    {
+      "name": "check_account",
+      "description": "Show HL account state (margin, balance)",
+      "command": "cd ~/agent-cli && python3 -m cli.main account"
+    },
+    {
+      "name": "list_strategies",
+      "description": "List all available trading strategies",
+      "command": "cd ~/agent-cli && python3 -m cli.main strategies"
+    }
+  ]
+}

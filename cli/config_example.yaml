@@ -1,0 +1,31 @@
+# hl run configuration
+# Usage: hl run avellaneda_mm --config cli/config_example.yaml
+
+strategy: avellaneda_mm
+strategy_params:
+  gamma: 0.1
+  k: 1.5
+  base_size: 0.5
+  max_inventory: 5.0
+
+# Instrument: ETH-PERP, VXX-USDYP, US3M-USDYP
+instrument: ETH-PERP
+tick_interval: 10.0
+
+# Risk limits (testnet-scale)
+max_position_qty: 5.0
+max_notional_usd: 15000
+max_order_size: 2.0
+max_daily_drawdown_pct: 2.5
+max_leverage: 3.0
+tvl: 50000
+
+# Network
+mainnet: false
+dry_run: false
+
+# Persistence
+data_dir: data/cli
+
+# Logging
+log_level: INFO

@@ -1,0 +1,139 @@
+"""hl run — start autonomous trading loop."""
+from __future__ import annotations
+
+import logging
+import sys
+from pathlib import Path
+from typing import Optional
+
+import typer
+
+
+def run_cmd(
+    strategy: str = typer.Argument(
+        ...,
+        help="Strategy name (e.g., 'avellaneda_mm') or path ('module:ClassName')",
+    ),
+    instrument: str = typer.Option(
+        "ETH-PERP", "--instrument", "-i",
+        help="Trading instrument (ETH-PERP, VXX-USDYP, US3M-USDYP)",
+    ),
+    tick_interval: float = typer.Option(
+        10.0, "--tick", "-t",
+        help="Seconds between ticks",
+    ),
+    config: Optional[Path] = typer.Option(
+        None, "--config", "-c",
+        help="YAML config file (overrides CLI flags)",
+    ),
+    mainnet: bool = typer.Option(
+        False, "--mainnet",
+        help="Use mainnet (default: testnet)",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run",
+        help="Run strategy but don't place real orders",
+    ),
+    max_ticks: int = typer.Option(
+        0, "--max-ticks",
+        help="Stop after N ticks (0 = run forever)",
+    ),
+    resume: bool = typer.Option(
+        True, "--resume/--fresh",
+        help="Resume from saved state or start fresh",
+    ),
+    data_dir: str = typer.Option(
+        "data/cli", "--data-dir",
+        help="Directory for state and trade logs",
+    ),
+    mock: bool = typer.Option(
+        False, "--mock",
+        help="Use mock market data (no HL connection needed)",
+    ),
+    model: Optional[str] = typer.Option(
+        None, "--model",
+        help="LLM model override for claude_agent strategy",
+    ),
+):
+    """Start autonomous trading with a strategy."""
+    # Add project root to path for imports
+    project_root = str(Path(__file__).resolve().parent.parent.parent)
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+    from cli.config import TradingConfig
+    from cli.strategy_registry import resolve_instrument, resolve_strategy_path
+
+    # Load config from YAML if provided, then override with CLI flags
+    if config:
+        cfg = TradingConfig.from_yaml(str(config))
+    else:
+        cfg = TradingConfig()
+
+    cfg.strategy = strategy
+    cfg.instrument = resolve_instrument(instrument)
+    cfg.tick_interval = tick_interval
+    cfg.mainnet = mainnet
+    cfg.dry_run = dry_run
+    cfg.max_ticks = max_ticks
+    cfg.data_dir = data_dir
+
+    # Setup logging
+    logging.basicConfig(
+        level=getattr(logging, cfg.log_level.upper(), logging.INFO),
+        format="%(asctime)s %(name)-14s %(levelname)-5s %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    # Resolve strategy
+    strategy_path = resolve_strategy_path(cfg.strategy)
+
+    from sdk.strategy_sdk.loader import load_strategy
+
+    strategy_cls = load_strategy(strategy_path)
+
+    # Pass --model override for LLM strategies
+    params = dict(cfg.strategy_params)
+    if model:
+        params["model"] = model
+
+    strategy_instance = strategy_cls(
+        strategy_id=cfg.strategy,
+        **params,
+    )
+
+    # Build HL adapter
+    if mock or dry_run:
+        from cli.hl_adapter import DirectMockProxy
+        hl = DirectMockProxy()
+        typer.echo(f"Mode: {'DRY RUN' if dry_run else 'MOCK'}")
+    else:
+        from cli.hl_adapter import DirectHLProxy
+        from parent.hl_proxy import HLProxy
+
+        private_key = cfg.get_private_key()
+        raw_hl = HLProxy(private_key=private_key, testnet=not cfg.mainnet)
+        hl = DirectHLProxy(raw_hl)
+        network = "mainnet" if cfg.mainnet else "testnet"
+        typer.echo(f"Mode: LIVE ({network})")
+
+    typer.echo(f"Strategy: {cfg.strategy} -> {strategy_path}")
+    typer.echo(f"Instrument: {cfg.instrument}")
+    typer.echo(f"Tick interval: {cfg.tick_interval}s")
+    if cfg.max_ticks > 0:
+        typer.echo(f"Max ticks: {cfg.max_ticks}")
+    typer.echo("")
+
+    # Build and run engine
+    from cli.engine import TradingEngine
+
+    engine = TradingEngine(
+        hl=hl,
+        strategy=strategy_instance,
+        instrument=cfg.instrument,
+        tick_interval=cfg.tick_interval,
+        dry_run=cfg.dry_run,
+        data_dir=cfg.data_dir,
+        risk_limits=cfg.to_risk_limits(),
+    )
+    engine.run(max_ticks=cfg.max_ticks, resume=resume)
