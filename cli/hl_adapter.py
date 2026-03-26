@@ -220,6 +220,18 @@ class DirectHLProxy:
             log.error("Failed to get open orders: %s", e)
             return []
 
+    def get_candles(self, coin: str, interval: str, lookback_ms: int) -> list:
+        """Fetch candle data from HL."""
+        return self._hl.get_candles(coin, interval, lookback_ms)
+
+    def get_all_markets(self) -> list:
+        """Fetch metadata + asset contexts for all perps."""
+        return self._hl.get_meta_and_asset_ctxs()
+
+    def get_all_mids(self) -> Dict[str, str]:
+        """Fetch mid prices for all assets."""
+        return self._hl.get_all_mids()
+
 
 class DirectMockProxy:
     """Mock adapter for dry-run / testing — no real HL connection."""
@@ -263,3 +275,15 @@ class DirectMockProxy:
 
     def get_open_orders(self, instrument: str = "") -> List[Dict]:
         return []
+
+    def get_candles(self, coin: str, interval: str, lookback_ms: int) -> list:
+        """Generate mock candle data."""
+        return self._mock.get_candles(coin, interval, lookback_ms)
+
+    def get_all_markets(self) -> list:
+        """Return mock meta + asset contexts."""
+        return self._mock.get_meta_and_asset_ctxs()
+
+    def get_all_mids(self) -> Dict[str, str]:
+        """Return mock mid prices."""
+        return self._mock.get_all_mids()

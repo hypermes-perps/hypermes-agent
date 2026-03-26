@@ -98,6 +98,48 @@ class MockHLProxy:
         log.info("Placed %d orders (%d cumulative fills)", len(placed), len(self.fills))
         return placed
 
+    def get_candles(self, coin: str, interval: str, lookback_ms: int) -> List[Dict]:
+        """Generate mock candle data."""
+        import random
+        now = int(time.time() * 1000)
+        interval_ms = {"1h": 3_600_000, "4h": 14_400_000, "15m": 900_000}.get(interval, 3_600_000)
+        n_candles = min(lookback_ms // interval_ms, 200)
+        candles = []
+        price = self.base_price
+        for i in range(n_candles):
+            t = now - (n_candles - i) * interval_ms
+            o = price
+            h = o * (1 + random.uniform(0, 0.02))
+            l = o * (1 - random.uniform(0, 0.02))
+            c = o * (1 + random.uniform(-0.01, 0.01))
+            v = random.uniform(100, 5000)
+            candles.append({"t": t, "o": str(round(o, 2)), "h": str(round(h, 2)),
+                            "l": str(round(l, 2)), "c": str(round(c, 2)), "v": str(round(v, 2))})
+            price = c
+        return candles
+
+    def get_meta_and_asset_ctxs(self) -> Any:
+        """Generate mock meta + asset contexts."""
+        import random
+        assets = ["BTC", "ETH", "SOL", "DOGE", "ARB", "OP", "AVAX", "MATIC",
+                  "LINK", "UNI", "AAVE", "CRV", "MKR", "SNX", "COMP"]
+        universe = []
+        asset_ctxs = []
+        for i, name in enumerate(assets):
+            universe.append({"name": name, "szDecimals": 3 if name == "BTC" else 1})
+            asset_ctxs.append({
+                "funding": str(round(random.uniform(-0.0005, 0.0005), 6)),
+                "openInterest": str(round(random.uniform(1e5, 1e8), 2)),
+                "prevDayPx": str(round(random.uniform(0.5, 60000), 2)),
+                "dayNtlVlm": str(round(random.uniform(1e5, 5e8), 2)),
+                "markPx": str(round(random.uniform(0.5, 60000), 2)),
+            })
+        return [{"universe": universe}, asset_ctxs]
+
+    def get_all_mids(self) -> Dict[str, str]:
+        """Return mock mid prices."""
+        return {"BTC": "50000.0", "ETH": "2500.0", "SOL": "100.0"}
+
     def get_fills(self, since_ms: int = 0) -> List[HLFill]:
         """Get fills since a given timestamp."""
         return [f for f in self.fills if f.timestamp_ms >= since_ms]
@@ -272,6 +314,23 @@ class HLProxy:
         log.info("Placed %d/%d orders on HL", len(placed),
                  sum(1 for f in fills if Decimal(str(f.get("quantity_filled", "0"))) > ZERO))
         return placed
+
+    def get_candles(self, coin: str, interval: str, lookback_ms: int) -> List[Dict]:
+        """Fetch candle data from HL."""
+        self._ensure_client()
+        end = int(time.time() * 1000)
+        start = end - lookback_ms
+        return self._info.candles_snapshot(coin, interval, start, end)
+
+    def get_meta_and_asset_ctxs(self) -> Any:
+        """Fetch metadata and asset contexts for all perps."""
+        self._ensure_client()
+        return self._info.meta_and_asset_ctxs()
+
+    def get_all_mids(self) -> Dict[str, str]:
+        """Fetch mid prices for all assets."""
+        self._ensure_client()
+        return self._info.all_mids()
 
     def get_fills(self, since_ms: int = 0) -> List[HLFill]:
         """Get fills from HL user state."""
