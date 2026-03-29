@@ -1,6 +1,6 @@
 # YEX Trading Agent CLI
 
-Autonomous trading agent for [Hyperliquid](https://hyperliquid.xyz) perps and [YEX](https://yex.trade) yield markets. Ships with 7 built-in strategies, a Claude-powered LLM agent, and a full autonomous trading stack: Dynamic Stop Loss (DSL), Opportunity Scanner, Emerging Movers detector, and the WOLF multi-slot orchestrator.
+Autonomous trading agent for [Hyperliquid](https://hyperliquid.xyz) perps and [YEX](https://yex.trade) yield markets. Ships with 14 built-in strategies (market making, momentum, arbitrage, and LLM-powered), a full autonomous trading stack (DSL, Scanner, Movers, WOLF orchestrator), HOWL nightly performance review, builder fee revenue collection, and encrypted keystore wallet management.
 
 Works as a standalone CLI, a **Claude Code skill**, or an **OpenClaw AgentSkill**.
 
@@ -11,8 +11,11 @@ git clone https://github.com/Nunchi-trade/agent-cli.git
 cd agent-cli
 pip install -e .
 
-# Set your HL private key
+# Set your HL private key (or use encrypted keystore: hl wallet import)
 export HL_PRIVATE_KEY=0x...
+
+# Validate environment
+hl setup check
 
 # Mock test (no connection needed)
 hl run avellaneda_mm --mock --max-ticks 10
@@ -28,14 +31,18 @@ hl wolf run --mock --max-ticks 10
 
 ```
 cli/           CLI commands and trading engine
-  commands/    Subcommand modules (run, dsl, scanner, movers, wolf, house)
-  hl_adapter.py  Direct HL API adapter (live + mock)
-strategies/    Trading strategy implementations
+  commands/    Subcommand modules (run, dsl, scanner, movers, wolf, house, builder, howl, wallet, setup)
+  hl_adapter.py    Direct HL API adapter (live + mock)
+  builder_fee.py   Builder fee configuration (HL native BuilderInfo)
+  keystore.py      Encrypted keystore (geth-compatible Web3 Secret Storage)
+strategies/    14 trading strategy implementations
 modules/       Pure logic modules (zero I/O)
   trailing_stop.py   DSL trailing stop engine
   scanner_engine.py  Opportunity scanner engine
   movers_engine.py   Emerging movers detection engine
   wolf_engine.py     WOLF decision engine
+  howl_engine.py     HOWL performance review engine
+  howl_reporter.py   HOWL markdown report generator
   *_config.py        Configuration + presets
   *_state.py         State models + persistence
   *_guard.py         Guard layer (engine + persistence bridge)
@@ -45,7 +52,7 @@ skills/        Agent Skills packaging (SKILL.md + runners)
 sdk/           Strategy base class, loader, and model registry
 common/        Shared data models and crypto utilities
 parent/        HL API proxy, position tracking, risk management
-tests/         Test suite
+tests/         Test suite (264 tests)
 ```
 
 ## Commands
@@ -84,6 +91,24 @@ hl wolf presets                   # List WOLF presets
 # House — TEE Clearing House Agent
 hl house join <strategy> [--url URL]  # Join a running house enclave
 hl house status [--url URL]           # Show house scoreboard
+
+# Builder Fee — Revenue Collection
+hl builder status                     # Show builder fee config
+hl builder approve [--mainnet]        # Approve fee on your HL account
+
+# HOWL — Performance Review
+hl howl run [--since DATE]            # Run analysis, generate report
+hl howl report [--date DATE]          # View a report
+hl howl history [-n 10]              # Show report trend
+
+# Wallet — Encrypted Keystore
+hl wallet create                      # Create new wallet + keystore
+hl wallet import --key <hex>          # Import existing key
+hl wallet list                        # List saved keystores
+hl wallet export [--address 0x...]    # Decrypt and export key
+
+# Setup — Environment Validation
+hl setup check                        # Validate SDK, keys, builder
 ```
 
 ## Strategies
@@ -97,6 +122,37 @@ hl house status [--url URL]           # Show house scoreboard
 | `rfq_agent` | Liquidity | Block-size dark RFQ flow |
 | `aggressive_taker` | Directional | Crosses spread with directional bias |
 | `claude_agent` | LLM | Multi-model AI agent (Gemini/Claude/OpenAI) |
+| `engine_mm` | Engine MM | Production quoting engine — composite FV, dynamic spreads, multi-level ladder |
+| `funding_arb` | Funding Arb | Cross-venue funding rate arbitrage — captures funding dislocations |
+| `regime_mm` | Regime MM | Vol-regime adaptive MM — switches behavior by volatility regime |
+| `liquidation_mm` | Liquidation MM | Liquidation flow MM — provides liquidity during cascade events |
+| `momentum_breakout` | Momentum | Enter on volume + price breakout above/below N-period range |
+| `grid_mm` | Grid MM | Fixed-interval grid levels above and below mid |
+| `basis_arb` | Basis Arb | Trades implied basis from funding rate (contango/backwardation) |
+
+### Quoting Engine Strategies
+
+The 4 engine-powered strategies (`engine_mm`, `funding_arb`, `regime_mm`, `liquidation_mm`) wrap the production quoting engine from Tee-work-. They share a common pipeline:
+
+```
+Market Data → Composite Fair Value → Dynamic Spread → Inventory Skew → Multi-Level Ladder → Orders
+              (4-signal blend)       (fee+vol+tox+event)  (price+size)    (exponential decay)
+```
+
+**engine_mm** — Baseline engine wrapper. Composite FV from oracle, external, microprice, and inventory signals. Dynamic spread with vol/toxicity/event components. Multi-level quote ladder with exponential size decay.
+
+**funding_arb** — Captures funding rate dislocations between HL and external venues (Binance, OKX, Bybit). When HL funding diverges from the cross-venue median, biases fair value and quotes asymmetrically to collect the premium. Especially valuable for YEX yield perps.
+
+**regime_mm** — Dynamically adapts quoting to 4 volatility regimes:
+
+| Regime | Spread | Size | Levels | Behavior |
+|--------|--------|------|--------|----------|
+| I_low (calm) | 2-8 bps | 1.5x | 4 | Aggressive, capture spread |
+| II_normal | 5-20 bps | 1.0x | 3 | Standard MM |
+| III_high | 15-40 bps | 0.5x | 2 | Defensive, reduce exposure |
+| IV_extreme | 30-80 bps | 0.2x | 1 | Survival mode |
+
+**liquidation_mm** — Detects liquidation cascades via OI drops. Normal mode: standard quoting. Cascade detected: widens spreads, reduces size on the cascade side, increases size on the contra side to capture forced-seller flow.
 
 ## Autonomous Trading Stack
 
@@ -223,35 +279,220 @@ hl wolf run --preset conservative
 
 ### House — TEE Clearing House Agent
 
-Connect to a running [Tee-work](https://github.com/Nunchi-trade/Tee-work-) house enclave and compete as a market-making agent in commit-reveal clearing rounds.
+This CLI implements the **agent side** of the [Nunchi / Daeji](https://github.com/Nunchi-trade/Tee-work-) architecture. Agents running market-making strategies connect to a House Enclave — a TEE-secured clearing venue — and compete for admission, flow, and revenue.
 
-**How it works:**
-1. Agent registers a strategy (source hash for admission control)
-2. Connects to the house relay via HTTP
-3. Each round: runs strategy → seals orders via ECIES to enclave pubkey → commits hash → reveals ciphertext
-4. House clears all agent orders via supply/demand crossing inside the TEE
+#### The 3-Layer Stack
+
+The House sits on a Hardware / Math / Proof stack:
+
+| Layer | Component | Purpose |
+|-------|-----------|---------|
+| Hardware | TEE execution + attestation | "Can't be evil" execution integrity |
+| Math | Off-chain solve + on-chain verify | "Proof of optimality" cooperative clearing |
+| Proof | ISFR + agent proofs + leaderboard | Durable data asset + reputational primitives |
+
+#### Agent → House Pipeline
+
+```
+┌─────────────┐     ┌──────────────┐     ┌──────────────────┐     ┌───────────────┐
+│  Agent CLI   │────▶│ Strategy     │────▶│  ECIES Seal      │────▶│ House Relay    │
+│  (this repo) │     │ on_tick()    │     │  to enclave      │     │ /v1/commit     │
+│              │     │ → Orders     │     │  pubkey           │     │ /v1/reveal     │
+└─────────────┘     └──────────────┘     └──────────────────┘     └───────┬───────┘
+                                                                          │
+                    ┌──────────────┐     ┌──────────────────┐     ┌───────▼───────┐
+                    │  Fills +     │◀────│  KKT Certificate │◀────│ Cooperative   │
+                    │  Positions   │     │  (proof of       │     │ Clearing      │
+                    │  Scoreboard  │     │   optimality)    │     │ inside TEE    │
+                    └──────────────┘     └──────────────────┘     └───────────────┘
+```
+
+**Step-by-step flow per round:**
+
+1. **Register** — Agent hashes strategy source via `inspect.getsource()` (SHA-256). The House uses this for admission control and attribution.
+2. **Connect** — `GET /v1/identity` fetches the enclave's secp256k1 public key and TEE attestation.
+3. **Receive snapshot** — `GET /v1/snapshot` returns the current round ID, phase, and `MarketSnapshot` with mid price, bid/ask, funding rate, OI.
+4. **Run strategy** — The agent's `on_tick()` produces `StrategyDecision`s, converted to `Order` objects with Decimal precision.
+5. **Seal** — Orders are ECIES-encrypted (secp256k1 + AES-256-GCM) to the enclave's public key. Only the TEE can decrypt.
+6. **Commit** — `POST /v1/commit` with `SHA-256(ciphertext)`. The hash locks the agent's orders before anyone reveals.
+7. **Reveal** — `POST /v1/reveal` with the full ciphertext. The enclave verifies `SHA-256(ciphertext) == commitment`.
+8. **Clear** — The House decrypts all bundles inside the TEE and runs cooperative clearing: supply/demand crossing that maximizes surplus. Produces fills + KKT certificates (dual-variable proof of optimality).
+9. **Verify** — Agent fetches `GET /v1/result/{round_id}` with fills, clearing prices, and KKT certificates. Verification is O(n^2) checks, not O(n^3) solving.
+
+#### Commit-Reveal Protocol
+
+| Phase | Agent Action | Endpoint | Description |
+|-------|-------------|----------|-------------|
+| IDLE | Poll | `GET /v1/snapshot` | Wait for round to enter commit phase |
+| COMMIT | Seal + hash | `POST /v1/commit` | Submit `SHA-256(ciphertext)` as binding commitment |
+| REVEAL | Send bundle | `POST /v1/reveal` | Submit ECIES-encrypted order bundle |
+| CLEARING | Wait | — | House decrypts, crosses orders, generates KKT certs |
+| DONE | Fetch | `GET /v1/result/{id}` | Retrieve fills, clearing prices, certificates |
+
+#### Why Commit-Reveal?
+
+Without it, agents could see others' orders and front-run. The two-phase protocol ensures **execution confidentiality**: orders are encrypted to the TEE's key during commit, so no one (not even the relay operator) can read them until the reveal phase. The TEE decrypts and clears atomically.
+
+#### Cooperative Clearing
+
+The House doesn't just match — it **cooperatively clears**:
+
+- **Off-chain solve**: finds the surplus-maximizing allocation across all agent orders
+- **KKT certificates**: each clearing round produces dual variables (lambda, mu) that prove optimality — anyone can verify in O(n^2)
+- **Fallback ladder**: if cooperative clearing fails, deterministic pruning removes lowest-priority orders and retries. If still infeasible → external hedge → safe mode.
+- **Pruning rule**: orders are priority-sorted by `(priorityFee, timestamp, txHash)`. The imbalance side's lowest-priority orders are removed first.
+
+#### House Admission ("Enter the House")
+
+Agents don't get House access by default — they **earn it** through the leaderboard:
+
+1. **Run as Liquidity Senate agent** — produce verifiable quotes/trades via this CLI
+2. **Build reputation** — the leaderboard scores agents on Sharpe, uptime, market quality (spread, depth), risk discipline, and integrity (TEE attestation rate)
+3. **Qualify** — top agents by epoch thresholds earn a `HouseSeatCertificate`
+4. **Enter** — the House Enclave loads the admitted strategy via a strategy VM (bundle + signature verification)
+
+House seats are **revocable**: immediate revocation for fraud, epoch-based renewal for uptime/quality, slashing for mandate violations.
+
+#### Agent Roles
+
+| Role | Description |
+|------|-------------|
+| **MM Agent** | Quotes two-sided markets, manages inventory bands |
+| **RFQ Agent** | Responds privately to block-size RFQs; hedges externally |
+| **Hedge Agent** | Reduces exposure per deterministic mandate (delta, DV01, funding) |
+
+#### Model Registry
+
+Strategies are versioned via source-code hashing:
+
+```python
+from sdk.strategy_sdk.registry import ModelRegistry
+
+registry = ModelRegistry()
+bundle = registry.register("strategies.avellaneda_mm:AvellanedaStoikovMM")
+# bundle.source_hash = SHA-256(inspect.getsource(cls))
+# bundle.strategy_id = "AvellanedaStoikovMM"
+
+# Verify a strategy hasn't been tampered with
+assert registry.verify(bundle)  # re-hashes and compares
+```
+
+The `strategy_artifact_hash` is included in every `DecisionEnvelope` for per-decision attribution and auditability.
+
+#### Usage
 
 ```bash
 # Join a house enclave with avellaneda_mm
 hl house join avellaneda_mm --url http://house:8080 --agent-id my-agent
 
-# Register strategy hash before joining
+# Register strategy hash before joining (for admission control)
 hl house join avellaneda_mm --url http://house:8080 --register
 
 # Check scoreboard
 hl house status --url http://house:8080
+
+# Custom poll interval (default 2s)
+hl house join simple_mm --url http://house:8080 --poll 5
 ```
 
-**Commit-reveal protocol:**
+#### API Endpoints (Agent → Relay)
 
-| Phase | Agent Action | Description |
-|-------|-------------|-------------|
-| COMMIT | POST /v1/commit | Submit SHA-256(ciphertext) as commitment |
-| REVEAL | POST /v1/reveal | Submit ECIES-encrypted order bundle |
-| CLEARING | (wait) | House decrypts and crosses orders inside TEE |
-| RESULT | GET /v1/result/{round_id} | Fetch fills and KKT certificates |
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/v1/identity` | Enclave public key + TEE attestation |
+| GET | `/v1/snapshot` | Current round ID, phase, market data |
+| POST | `/v1/commit` | Submit commitment hash |
+| POST | `/v1/reveal` | Submit encrypted order bundle |
+| GET | `/v1/result/{round_id}` | Fills, clearing prices, KKT certificates |
+| GET | `/v1/positions/{agent_id}` | Agent's current positions |
+| GET | `/v1/scoreboard` | Leaderboard rankings |
 
-**Model Registry:** Strategies are hashed via `inspect.getsource()` for reproducibility and admission control. The house can verify that an agent is running an approved strategy version.
+## Builder Fee — Revenue Collection
+
+Collect revenue on every trade via Hyperliquid's native builder fee system. The fee is attached to each order as `BuilderInfo` — no extra gas, no contract calls, no custodial risk.
+
+```bash
+# Configure (env vars or YAML)
+export BUILDER_ADDRESS=0xYourAddress
+export BUILDER_FEE_TENTHS_BPS=10  # 10 = 1 bps = 0.01%
+
+# Users must approve once
+hl builder approve
+
+# Check config
+hl builder status
+```
+
+Or in YAML config:
+
+```yaml
+builder:
+  builder_address: "0xYourAddress"
+  fee_rate_tenths_bps: 10
+```
+
+The fee flows through the entire order pipeline: `TradingEngine` → `OrderManager` → `DirectHLProxy.place_order()` → `exchange.order(..., builder=info)`. WOLF runner also passes builder info on every enter/exit.
+
+## HOWL — Hunt, Optimize, Win, Learn
+
+Nightly automated performance review. Reads `data/cli/trades.jsonl`, computes metrics, detects patterns, and generates actionable recommendations.
+
+```bash
+# Run analysis
+hl howl run --since 2026-03-01
+
+# View last report
+hl howl report
+
+# Track trends
+hl howl history -n 10
+```
+
+**Metrics computed:**
+
+| Metric | Description |
+|--------|-------------|
+| Win Rate | % of round trips with positive net PnL |
+| Gross/Net PF | Profit factor (wins / losses) |
+| FDR | Fee Drag Ratio — fees as % of gross wins |
+| Direction Split | Long vs short win rates and PnL |
+| Holding Periods | Bucketed by <5m, 5-15m, 15-60m, 1-4h, 4h+ |
+| Monster Dependency | % of net PnL from best single trade |
+| Max Consecutive Losses | Longest loss streak |
+| Strategy Breakdown | Per-strategy win rate, PnL, fees |
+
+**Recommendation engine (rule-based):**
+
+| Condition | Recommendation |
+|-----------|----------------|
+| FDR > 30% | Reduce trade frequency or increase edge |
+| Win rate < 40% | Tighten entry criteria |
+| Monster dependency > 60% | Diversify alpha sources |
+| 5+ consecutive losses | Add loss-streak circuit breaker |
+| Fees > gross PnL | CRITICAL: widen spreads or reduce frequency |
+
+## Wallet — Encrypted Keystore
+
+Replace raw `HL_PRIVATE_KEY` env var with encrypted keystore files. Uses `eth_account.Account.encrypt()/decrypt()` — geth-compatible Web3 Secret Storage with scrypt KDF.
+
+```bash
+# Create a new wallet
+hl wallet create
+
+# Import existing key
+hl wallet import
+
+# List keystores
+hl wallet list
+
+# Export (decrypt)
+hl wallet export --address 0x...
+```
+
+Keystores are saved to `~/.hl-agent/keystore/<address>.json`. The key priority order is:
+
+1. Encrypted keystore (with `HL_KEYSTORE_PASSWORD` env var)
+2. `HL_PRIVATE_KEY` env var
 
 ## Custom Strategies
 
@@ -409,6 +650,10 @@ max_daily_drawdown_pct: 2.5
 
 mainnet: false
 dry_run: false
+
+builder:
+  builder_address: "0xYourAddress"
+  fee_rate_tenths_bps: 10
 ```
 
 ```bash
@@ -450,6 +695,11 @@ pytest tests/test_trailing_stop.py -v     # DSL tests
 pytest tests/test_scanner_engine.py -v    # Scanner tests
 pytest tests/test_movers_engine.py -v     # Movers tests
 pytest tests/test_wolf_engine.py -v       # WOLF tests
+pytest tests/test_engine_strategies.py -v # Engine strategies
+pytest tests/test_new_strategies.py -v    # Momentum, grid, basis
+pytest tests/test_builder_fee.py -v       # Builder fee
+pytest tests/test_howl_engine.py -v       # HOWL performance review
+pytest tests/test_keystore.py -v          # Encrypted keystore
 ```
 
 ## License

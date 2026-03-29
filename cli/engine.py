@@ -33,17 +33,19 @@ class TradingEngine:
         dry_run: bool = False,
         data_dir: str = "data/cli",
         risk_limits: Optional[RiskLimits] = None,
+        builder: Optional[dict] = None,
     ):
         self.hl = hl
         self.strategy = strategy
         self.instrument = instrument
         self.tick_interval = tick_interval
         self.dry_run = dry_run
+        self.builder = builder
 
         # Reuse existing components (no modifications to core)
         self.position_tracker = PositionTracker()
         self.risk_manager = RiskManager(limits=risk_limits)
-        self.order_manager = OrderManager(hl, instrument=instrument, dry_run=dry_run)
+        self.order_manager = OrderManager(hl, instrument=instrument, dry_run=dry_run, builder=builder)
 
         # Persistence
         self.state_db = StateDB(path=f"{data_dir}/state.db")
@@ -57,6 +59,9 @@ class TradingEngine:
         # Optional DSL guard (composable mode — set via dsl_config)
         self.dsl_guard = None   # type: ignore[assignment]
         self.dsl_config = None  # type: ignore[assignment]
+
+        # Optional markout tracker (measures fill quality vs anomaly state)
+        self.markout_tracker = None  # type: ignore[assignment]
 
     def run(self, max_ticks: int = 0, resume: bool = True) -> None:
         """Main loop. Blocks until max_ticks reached or SIGINT/SIGTERM."""
@@ -172,7 +177,35 @@ class TradingEngine:
                 "price": str(fill.price),
                 "quantity": str(fill.quantity),
                 "timestamp_ms": fill.timestamp_ms,
+                "fee": str(fill.fee),
+                "strategy": self.strategy.strategy_id,
             })
+
+            # Record fill for markout tracking
+            if self.markout_tracker is not None:
+                h_tox = 0.0
+                detector_scores = {}
+                scorer = getattr(self.strategy, '_tox_scorer', None)
+                if scorer is not None:
+                    h_tox = scorer.score(
+                        snapshot.mid_price, snapshot.bid, snapshot.ask,
+                        snapshot.timestamp_ms,
+                    )
+                    detector_scores = self.markout_tracker.get_current_detector_scores(
+                        fill.instrument, fill.timestamp_ms / 1000.0,
+                    )
+                self.markout_tracker.record_fill(
+                    fill_id=str(fill.oid),
+                    instrument=fill.instrument,
+                    side=fill.side,
+                    fill_price=float(fill.price),
+                    fill_qty=float(fill.quantity),
+                    fill_timestamp_ms=fill.timestamp_ms,
+                    mid_at_fill=snapshot.mid_price,
+                    h_tox=h_tox,
+                    spread_bps=snapshot.spread_bps,
+                    detector_scores=detector_scores,
+                )
 
         # 7b. Lazy DSL guard init (after first fill establishes a position)
         if self.dsl_config is not None and self.dsl_guard is None and fills:
@@ -188,6 +221,10 @@ class TradingEngine:
                 self.dsl_guard.mark_closed(snapshot.mid_price, "Position closed by strategy")
             else:
                 self.dsl_guard.state.position_size = float(abs(pos.net_qty))
+
+        # 7d. Update markout windows with current mid price
+        if self.markout_tracker is not None:
+            self.markout_tracker.update(snapshot.mid_price, snapshot.timestamp_ms)
 
         # 8. Post-fill risk update
         self.risk_manager.post_fill_update(self.position_tracker, mark_prices)
@@ -232,6 +269,7 @@ class TradingEngine:
             size=size,
             price=price,
             tif="Ioc",
+            builder=self.builder,
         )
         if fill:
             self.position_tracker.apply_fill(
@@ -246,6 +284,8 @@ class TradingEngine:
                 "price": str(fill.price),
                 "quantity": str(fill.quantity),
                 "timestamp_ms": fill.timestamp_ms,
+                "fee": str(fill.fee),
+                "strategy": self.strategy.strategy_id,
                 "meta": "dsl_close",
             })
             log.info("DSL closed position: %s %s @ %s", fill.side, fill.quantity, fill.price)
@@ -308,6 +348,23 @@ class TradingEngine:
         log.info("Shutting down engine...")
         self.order_manager.cancel_all()
         self._persist_state()
+
+        # Flush any pending markout records
+        if self.markout_tracker is not None:
+            try:
+                snap = self.hl.get_snapshot(self.instrument)
+                flushed = self.markout_tracker.flush_incomplete(
+                    snap.mid_price, snap.timestamp_ms,
+                )
+                if flushed:
+                    log.info("Flushed %d incomplete markout records", flushed)
+                log.info(
+                    "Markout tracker: %d completed, %d pending at shutdown",
+                    self.markout_tracker.completed_count,
+                    self.markout_tracker.pending_count,
+                )
+            except Exception as e:
+                log.warning("Failed to flush markout tracker: %s", e)
 
         # Print summary
         agent_id = self.strategy.strategy_id

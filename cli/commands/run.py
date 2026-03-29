@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -102,9 +103,16 @@ def run_cmd(
     is_yex = cfg.instrument.startswith("yex:") or cfg.instrument.endswith("-USDYP")
     protection_enabled = is_yex and cfg.protection.get("enabled", is_yex)
 
+    markout_tracker = None
+
     if protection_enabled:
         try:
-            from anomaly_protection import AnomalyStateStore, AnomalyToxicityScorer, ProtectionConfig
+            # Ensure anomaly-protection is importable
+            anomaly_prot_root = Path.home() / "anomaly-protection"
+            if str(anomaly_prot_root) not in sys.path and anomaly_prot_root.exists():
+                sys.path.insert(0, str(anomaly_prot_root))
+
+            from anomaly_protection import AnomalyStateStore, AnomalyToxicityScorer, ProtectionConfig, MarkoutTracker
             from anomaly_protection.config import load_protection_config
 
             store = AnomalyStateStore()
@@ -127,6 +135,11 @@ def run_cmd(
 
             scorer = AnomalyToxicityScorer(store, prot_config)
             params["toxicity_scorer"] = scorer
+
+            # Create markout tracker for thesis validation
+            markout_path = f"{cfg.data_dir}/markouts.jsonl"
+            markout_tracker = MarkoutTracker(output_path=markout_path, scorer=scorer)
+            typer.echo(f"Markout tracker: logging to {markout_path}")
 
             # Start anomaly detector in background thread
             from anomaly_protection.sink import ProtectionSink
@@ -177,6 +190,26 @@ def run_cmd(
         **params,
     )
 
+    # ── Network guard: prevent wrong-chain accidents ──
+    if cfg.mainnet:
+        env_testnet = os.environ.get("HL_TESTNET", "true").lower()
+        if env_testnet == "true":
+            typer.echo(
+                "FATAL: --mainnet flag set but HL_TESTNET=true in environment. "
+                "Refusing to start. Set HL_TESTNET=false or source .env.mainnet.",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+    else:
+        env_testnet = os.environ.get("HL_TESTNET", "true").lower()
+        if env_testnet == "false":
+            typer.echo(
+                "FATAL: running in testnet mode but HL_TESTNET=false in environment. "
+                "Pass --mainnet or fix your environment.",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+
     # Build HL adapter
     if mock or dry_run:
         from cli.hl_adapter import DirectMockProxy
@@ -199,6 +232,14 @@ def run_cmd(
         typer.echo(f"Max ticks: {cfg.max_ticks}")
     typer.echo("")
 
+    # Builder fee
+    builder_cfg = cfg.get_builder_config()
+    builder_info = builder_cfg.to_builder_info()
+    if builder_info:
+        typer.echo(f"Builder fee: {builder_cfg.fee_bps} bps -> {builder_cfg.builder_address[:10]}...")
+    else:
+        typer.echo("Builder fee: disabled")
+
     # Build and run engine
     from cli.engine import TradingEngine
 
@@ -210,7 +251,12 @@ def run_cmd(
         dry_run=cfg.dry_run,
         data_dir=cfg.data_dir,
         risk_limits=cfg.to_risk_limits(),
+        builder=builder_info,
     )
+
+    # Attach markout tracker if protection is enabled
+    if markout_tracker is not None:
+        engine.markout_tracker = markout_tracker
 
     # Attach DSL guard if configured
     if cfg.dsl and cfg.dsl.get("enabled"):
