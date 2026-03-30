@@ -1,0 +1,14 @@
+[build]
+builder = "dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+restartPolicyType = "on_failure"
+
+[variables]
+PORT = "8080"
+HL_TESTNET = "true"
+WOLF_PRESET = "default"
+RUN_MODE = "wolf"
+INSTRUMENT = "ETH-PERP"
