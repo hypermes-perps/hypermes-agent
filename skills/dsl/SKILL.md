@@ -131,3 +131,61 @@ tiers:
 | Trailing floor | `hw * (1 - retrace)` | `hw * (1 + retrace)` |
 | Effective floor | `max(tier, trailing)` | `min(tier, trailing)` |
 | Breach | `price <= floor` | `price >= floor` |
+
+## Agent Mandate
+
+You are the DSL trailing stop guardian. Your job is to protect profits and limit losses on open positions. You never make entry decisions — you only manage exits via a two-phase trailing stop system.
+
+RULES:
+- ALWAYS attach DSL to every open position — unprotected positions are unacceptable
+- NEVER override a CLOSE signal — if DSL says close, close immediately
+- ALWAYS use the correct direction (long/short) — wrong direction inverts all logic
+- Let Phase 1 breathe — do not panic on early retrace within 3% threshold
+- In Phase 2, trust the tier system — floors only ratchet up, never down
+- ALWAYS verify entry price and leverage are correct before starting
+
+## Decision Rules
+
+| Condition | Action |
+|-----------|--------|
+| DSL returns `CLOSE` | Close position immediately — no hesitation |
+| DSL returns `TIER_CHANGED` | Log the new tier — no action needed, floors auto-ratchet |
+| DSL returns `HOLD` | Do nothing — position is healthy |
+| ROE > 10% and still Phase 1 | Normal — Phase 2 triggers at first tier (usually 10% ROE) |
+| Breach count incrementing but no close | Phase 1 patience — 3 consecutive breaches needed |
+| Stagnation timer triggered | Close — profit is stale, capital better deployed elsewhere |
+
+| Preset | When to Use |
+|--------|-------------|
+| `moderate` | Standard trades, medium hold time, balanced protection |
+| `tight` | Aggressive protection, short holds, includes stagnation TP |
+| Custom | Only when you understand all tier parameters — test with mock first |
+
+## Anti-Patterns
+
+- **Using tight preset on trending assets**: Tight stops exit too early on strong trends. Use moderate for trend-following strategies.
+- **Wrong direction parameter**: Setting `direction=long` on a short position means DSL will hold losses and exit winners. Always double-check.
+- **Overriding CLOSE signals**: "It'll come back" → it won't. DSL computed the exit. Trust it.
+- **Starting DSL after the move**: DSL needs accurate entry price. Starting DSL at current price when entry was 2% ago means the trailing is wrong.
+- **Running without leverage parameter**: Default leverage (10x) may not match your actual leverage → incorrect ROE calculation → wrong tier triggers.
+
+## Error Recovery
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `No position found` | Position already closed or wrong instrument | Check `hl status` for actual positions |
+| `DSL state stale` | Process crashed mid-tick | Restart DSL — state file preserves last known state |
+| `Negative ROE but no close` | Still in Phase 1 tolerance | Normal if within 3% retrace. Hard stop at -5% ROE is separate |
+| `Tier jumped from 1 to 4` | Fast price move between ticks | Normal — tiers are checked sequentially but can skip |
+
+## Composition
+
+DSL is a sub-component of WOLF (runs every tick per active slot). Can also be used standalone to guard any position. When used with WOLF, DSL states are managed automatically. When used standalone, you must provide entry price, size, direction, and leverage.
+
+## Cron Template
+
+```bash
+# DSL is typically long-running (attached to a position), not cron-scheduled.
+# Start manually when opening a position:
+hl dsl start ETH-PERP --entry 2500 --direction long --leverage 10 --preset moderate --tick 5
+```

@@ -5,6 +5,8 @@ directly via aggressive IOC orders. No agent intervention needed.
 """
 from __future__ import annotations
 
+import skills._bootstrap  # noqa: F401 — auto-setup sys.path
+
 import logging
 import signal
 import time

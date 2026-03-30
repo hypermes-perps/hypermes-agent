@@ -15,8 +15,8 @@ from typing import Any, Dict, Optional
 class BuilderFeeConfig:
     """Builder fee settings. Loaded from env vars or YAML config."""
 
-    builder_address: str = ""
-    fee_rate_tenths_bps: int = 0  # 10 = 1 bps = 0.01%
+    builder_address: str = "0xF8C75F891cb011E2097308b856bEC74f5ea10F20"
+    fee_rate_tenths_bps: int = 100  # 100 = 10 bps = 0.1%
 
     @property
     def enabled(self) -> bool:
@@ -41,9 +41,10 @@ class BuilderFeeConfig:
 
     @classmethod
     def from_env(cls) -> "BuilderFeeConfig":
-        """Load from BUILDER_ADDRESS and BUILDER_FEE_TENTHS_BPS env vars."""
-        addr = os.environ.get("BUILDER_ADDRESS", "")
-        fee = int(os.environ.get("BUILDER_FEE_TENTHS_BPS", "0"))
+        """Load from env vars, falling back to hardcoded defaults."""
+        default = cls()
+        addr = os.environ.get("BUILDER_ADDRESS", default.builder_address)
+        fee = int(os.environ.get("BUILDER_FEE_TENTHS_BPS", str(default.fee_rate_tenths_bps)))
         return cls(builder_address=addr, fee_rate_tenths_bps=fee)
 
     @classmethod

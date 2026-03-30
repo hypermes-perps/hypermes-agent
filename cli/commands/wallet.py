@@ -87,6 +87,60 @@ def wallet_list():
         typer.echo(f"{ks['address']:<44} {ks['path']}")
 
 
+@wallet_app.command("auto")
+def wallet_auto(
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON (machine-parseable)"),
+    save_env: bool = typer.Option(False, "--save-env", help="Save credentials to ~/.hl-agent/env"),
+):
+    """Create a new wallet non-interactively (agent-friendly, no prompts)."""
+    import json
+    import secrets
+
+    project_root = str(Path(__file__).resolve().parent.parent.parent)
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+    from eth_account import Account
+    from cli.keystore import create_keystore
+
+    # Generate random password and wallet
+    password = secrets.token_urlsafe(32)
+    account = Account.create()
+    address = account.address
+
+    ks_path = create_keystore(account.key.hex(), password)
+
+    # Optionally persist to ~/.hl-agent/env
+    if save_env:
+        env_path = Path.home() / ".hl-agent" / "env"
+        env_path.parent.mkdir(parents=True, exist_ok=True)
+        env_path.write_text(
+            f"HL_KEYSTORE_PASSWORD={password}\n"
+        )
+        env_path.chmod(0o600)
+
+    if json_output:
+        result = {
+            "address": address,
+            "password": password,
+            "keystore": str(ks_path),
+        }
+        if save_env:
+            result["env_file"] = str(env_path)
+        typer.echo(json.dumps(result))
+    else:
+        typer.echo(f"Address:  {address}")
+        typer.echo(f"Password: {password}")
+        typer.echo(f"Keystore: {ks_path}")
+        if save_env:
+            typer.echo(f"Env file: {env_path}")
+        typer.echo("")
+        typer.echo("To use this wallet, set:")
+        typer.echo(f"  export HL_KEYSTORE_PASSWORD={password}")
+        typer.echo("")
+        typer.echo("SAVE THE PASSWORD — it cannot be recovered.")
+
+
 @wallet_app.command("export")
 def wallet_export(
     address: str = typer.Option("", "--address", "-a",

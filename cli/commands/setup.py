@@ -80,3 +80,106 @@ def setup_check():
         typer.echo(f"\n{len(issues)} issue(s) found.")
     else:
         typer.echo("\nAll checks passed.")
+
+
+@setup_app.command("bootstrap")
+def setup_bootstrap():
+    """Bootstrap environment: check Python, create venv if needed, install package."""
+    import subprocess
+
+    project_root = Path(__file__).resolve().parent.parent.parent
+
+    # 1. Python version check
+    if sys.version_info < (3, 9):
+        typer.echo(f"ERROR: Python 3.9+ required (found {sys.version_info.major}.{sys.version_info.minor})")
+        raise typer.Exit(1)
+    typer.echo(f"OK  Python {sys.version_info.major}.{sys.version_info.minor}")
+
+    # 2. Check if in venv
+    in_venv = sys.prefix != sys.base_prefix
+    venv_dir = project_root / ".venv"
+
+    if not in_venv:
+        if not venv_dir.exists():
+            typer.echo(f"Creating venv at {venv_dir} ...")
+            import venv
+            venv.create(str(venv_dir), with_pip=True)
+        typer.echo(f"NOTE: Activate venv first:  source {venv_dir}/bin/activate")
+        typer.echo("Then re-run:  hl setup bootstrap")
+        raise typer.Exit(0)
+    else:
+        typer.echo(f"OK  In venv: {sys.prefix}")
+
+    # 3. Install package
+    typer.echo("Installing agent-cli ...")
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-e", str(project_root), "--quiet"],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        typer.echo(f"ERROR: pip install failed:\n{result.stderr}", err=True)
+        raise typer.Exit(1)
+    typer.echo("OK  Package installed")
+
+    # 4. Run check
+    typer.echo("")
+    setup_check()
+
+    typer.echo("\nBootstrap complete. Next: hl wallet auto")
+
+
+@setup_app.command("claim-usdyp")
+def setup_claim_usdyp():
+    """Claim testnet USDyP tokens (required for YEX markets)."""
+    import json
+    import urllib.request
+
+    project_root = str(Path(__file__).resolve().parent.parent.parent)
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+    # Derive address from private key
+    from cli.config import TradingConfig
+
+    cfg = TradingConfig()
+    try:
+        key = cfg.get_private_key()
+    except RuntimeError as e:
+        typer.echo(f"ERROR: {e}", err=True)
+        typer.echo("Run 'hl wallet auto' first to create a wallet.")
+        raise typer.Exit(1)
+
+    from eth_account import Account
+    acct = Account.from_key(key)
+    address = acct.address
+
+    typer.echo(f"Claiming USDyP for {address} ...")
+
+    url = "https://api-temp.nunchi.trade/api/v1/yex/usdyp-claim"
+    payload = json.dumps({"userAddress": address}).encode()
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "x-network": "testnet",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            body = resp.read().decode()
+            typer.echo(f"OK  Claim response: {body}")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode() if e.fp else ""
+        typer.echo(f"ERROR: HTTP {e.code}: {body}", err=True)
+        if "not eligible" in body.lower() or "verify" in body.lower():
+            typer.echo("")
+            typer.echo("This usually means the wallet hasn't connected to Hyperliquid yet.")
+            typer.echo("Fix: Visit https://app.hyperliquid-testnet.xyz and connect this wallet first,")
+            typer.echo("     then re-run 'hl setup claim-usdyp'.")
+        raise typer.Exit(1)
+    except Exception as e:
+        typer.echo(f"ERROR: {e}", err=True)
+        raise typer.Exit(1)

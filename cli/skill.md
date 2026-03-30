@@ -19,11 +19,70 @@ metadata:
 
 Autonomous Hyperliquid trading via agent-cli. 14 strategies across market making, momentum, arbitrage, and LLM-powered trading. WOLF multi-slot orchestrator. HOWL nightly performance review. Builder fee revenue collection.
 
-## Setup
+## Quick Start (Agent-Friendly)
+
+```bash
+cd ~/agent-cli
+bash scripts/bootstrap.sh           # Creates venv, installs, validates
+hl wallet auto --save-env             # Creates wallet, saves creds to ~/.hl-agent/env
+hl setup claim-usdyp                 # Claim testnet USDyP
+hl builder approve                   # Approve builder fee (one-time)
+hl run avellaneda_mm --mock --max-ticks 3  # Validate
+hl run engine_mm -i ETH-PERP --tick 15 --max-ticks 5  # First live trade
+```
+
+For full step-by-step onboarding, see `skills/onboard/SKILL.md`.
+
+## Setup (Manual)
 
 ```bash
 cd ~/agent-cli && pip install -e .
 hl setup check  # Validate environment
+```
+
+### Getting Started — YEX Testnet
+
+1. Set your private key (or use `hl wallet auto`):
+```bash
+export HL_PRIVATE_KEY=0x...
+export HL_TESTNET=true  # default
+```
+
+2. Claim testnet USDyP (required for YEX markets):
+```bash
+hl setup claim-usdyp
+```
+
+3. Approve builder fee (one-time):
+```bash
+hl builder approve
+```
+
+4. Start trading:
+```bash
+hl run avellaneda_mm -i VXX-USDYP --tick 15          # YEX yield market
+hl run engine_mm -i ETH-PERP --tick 10                # Standard perp
+hl wolf run --mock --max-ticks 5                       # WOLF multi-slot
+```
+
+### Getting Started — Mainnet
+
+1. Set your private key and network:
+```bash
+export HL_PRIVATE_KEY=0x...
+export HL_TESTNET=false
+```
+
+2. Approve builder fee (one-time):
+```bash
+hl builder approve --mainnet
+```
+
+3. Start trading:
+```bash
+hl run engine_mm -i ETH-PERP --tick 10 --mainnet      # ETH perp
+hl run avellaneda_mm -i BTC-PERP --tick 10 --mainnet   # BTC perp
+hl wolf run --mainnet                                   # WOLF multi-slot
 ```
 
 ### Environment Variables
@@ -32,9 +91,9 @@ hl setup check  # Validate environment
 |----------|----------|-------------|
 | `HL_PRIVATE_KEY` | Yes* | Hyperliquid private key |
 | `HL_KEYSTORE_PASSWORD` | Alt* | Password for encrypted keystore |
-| `HL_TESTNET` | No | `true` (default) or `false` |
-| `BUILDER_ADDRESS` | No | Builder fee collection address |
-| `BUILDER_FEE_TENTHS_BPS` | No | Fee in tenths of bps (10 = 1 bps) |
+| `HL_TESTNET` | No | `true` (default) or `false` for mainnet |
+| `BUILDER_ADDRESS` | No | Override builder fee address (default: hardcoded) |
+| `BUILDER_FEE_TENTHS_BPS` | No | Override fee rate (default: 100 = 10 bps) |
 | `ANTHROPIC_API_KEY` | No | For `claude_agent` strategy |
 | `GEMINI_API_KEY` | No | For `claude_agent` with Gemini |
 
@@ -105,7 +164,8 @@ hl builder approve [--mainnet]
 ### Wallet (Encrypted Keystore)
 
 ```bash
-hl wallet create
+hl wallet auto                       # Non-interactive wallet creation (agent-friendly)
+hl wallet create                     # Interactive wallet creation
 hl wallet import --key <hex>
 hl wallet list
 hl wallet export [--address 0x...]
@@ -114,7 +174,16 @@ hl wallet export [--address 0x...]
 ### Environment Setup
 
 ```bash
-hl setup check
+hl setup check                       # Validate environment
+hl setup bootstrap                   # Auto-create venv and install
+hl setup claim-usdyp                 # Claim testnet USDyP tokens
+```
+
+### MCP Server
+
+```bash
+hl mcp serve                         # Start MCP server (stdio transport)
+hl mcp serve --transport sse         # Start MCP server (SSE transport)
 ```
 
 ### TEE Clearing House
@@ -151,12 +220,15 @@ hl house status
 ## Workflow
 
 1. **Setup**: `hl setup check`
-2. **Mock test**: `hl run avellaneda_mm --mock --max-ticks 5`
-3. **Dry run**: `hl run engine_mm --dry-run --max-ticks 10`
-4. **Live testnet**: `hl run engine_mm -i ETH-PERP --tick 10`
-5. **WOLF mode**: `hl wolf run --mock --max-ticks 5`
-6. **Monitor**: `hl status --watch`
-7. **Review**: `hl howl run`
+2. **Claim USDyP** (testnet only): `hl setup claim-usdyp`
+3. **Approve builder fee**: `hl builder approve` (testnet) or `hl builder approve --mainnet`
+4. **Mock test**: `hl run avellaneda_mm --mock --max-ticks 5`
+5. **Dry run**: `hl run engine_mm --dry-run --max-ticks 10`
+6. **Live testnet**: `hl run engine_mm -i ETH-PERP --tick 10`
+7. **Live mainnet**: `hl run engine_mm -i ETH-PERP --tick 10 --mainnet`
+8. **WOLF mode**: `hl wolf run --mainnet` or `hl wolf run --mock --max-ticks 5`
+9. **Monitor**: `hl status --watch`
+10. **Review**: `hl howl run`
 
 ## Builder Fee Revenue
 

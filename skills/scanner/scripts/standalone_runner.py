@@ -1,6 +1,8 @@
 """Standalone scanner runner — tick loop that fetches data and runs scans."""
 from __future__ import annotations
 
+import skills._bootstrap  # noqa: F401 — auto-setup sys.path
+
 import logging
 import signal
 import time
