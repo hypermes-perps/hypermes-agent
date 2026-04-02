@@ -179,19 +179,14 @@ hl setup bootstrap                   # Auto-create venv and install
 hl setup claim-usdyp                 # Claim testnet USDyP tokens
 ```
 
-### MCP Server
+### MCP Server (16 Tools)
 
 ```bash
 hl mcp serve                         # Start MCP server (stdio transport)
 hl mcp serve --transport sse         # Start MCP server (SSE transport)
 ```
 
-### TEE Clearing House
-
-```bash
-hl house join [--mainnet]
-hl house status
-```
+Tools: `strategies`, `builder_status`, `wallet_list`, `wallet_auto`, `setup_check`, `account`, `status`, `trade`, `run_strategy`, `scanner_run`, `wolf_status`, `wolf_run`, `howl_run`, `agent_memory`, `trade_journal`, `judge_report`
 
 ## Strategies (14)
 

@@ -220,9 +220,8 @@ class MockHLProxy:
 class HLProxy:
     """Real Hyperliquid proxy using hyperliquid-python-sdk.
 
-    Requires:
-      - HL_PRIVATE_KEY env var (for signing orders)
-      - HL_API_URL env var (defaults to testnet)
+    Auth priority: keystore > HL_PRIVATE_KEY env var.
+    Use TradingConfig.get_private_key() to resolve credentials.
     """
 
     def __init__(self, private_key: Optional[str] = None, testnet: bool = True):
@@ -251,13 +250,14 @@ class HLProxy:
         self._exchange = Exchange(account, base_url)
         log.info("HL client initialized: %s (testnet=%s)", self._address, self.testnet)
 
-        # Set max leverage for all assets we trade
-        for coin in ["ETH"]:
-            try:
-                self._exchange.update_leverage(25, coin, is_cross=True)
-                log.info("Set %s leverage to 25x cross", coin)
-            except Exception as e:
-                log.warning("Failed to set %s leverage: %s", coin, e)
+    def set_leverage(self, leverage: int, coin: str = "ETH", is_cross: bool = True):
+        """Set leverage for a coin. Call explicitly instead of hardcoding on init."""
+        self._ensure_client()
+        try:
+            self._exchange.update_leverage(leverage, coin, is_cross=is_cross)
+            log.info("Set %s leverage to %dx %s", coin, leverage, "cross" if is_cross else "isolated")
+        except Exception as e:
+            log.warning("Failed to set %s leverage: %s", coin, e)
 
     @staticmethod
     def _hl_coin(instrument: str) -> str:

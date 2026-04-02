@@ -79,8 +79,12 @@ class EmergingMoversEngine:
         for i, ctx in enumerate(ctxs):
             if i >= len(universe):
                 break
+            try:
+                asset_name = universe[i].get("name", "")
+            except (IndexError, AttributeError):
+                continue
             snapshots.append(AssetSnapshot(
-                asset=universe[i].get("name", ""),
+                asset=asset_name,
                 timestamp_ms=now_ms,
                 open_interest=float(ctx.get("openInterest", 0)),
                 volume_24h=float(ctx.get("dayNtlVlm", 0)),

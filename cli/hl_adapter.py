@@ -43,6 +43,10 @@ class DirectHLProxy:
         self._hl = hl
         self._hl._ensure_client()
 
+    def set_leverage(self, leverage: int, coin: str = "ETH", is_cross: bool = True):
+        """Set leverage for a coin via the underlying proxy."""
+        self._hl.set_leverage(leverage, coin, is_cross)
+
     @property
     def _info(self):
         return self._hl._info
@@ -89,7 +93,10 @@ class DirectHLProxy:
             return MarketSnapshot(instrument=instrument)
 
     def get_account_state(self) -> Dict:
-        """Fetch account state directly from HL Info API."""
+        """Fetch account state directly from HL Info API.
+
+        Handles SDK IndexError when spot metadata is present in the response.
+        """
         try:
             state = self._info.user_state(self._address)
             margin_summary = state.get("marginSummary", {})
@@ -100,6 +107,30 @@ class DirectHLProxy:
                 "address": self._address,
                 "positions": state.get("assetPositions", []),
             }
+        except IndexError:
+            # SDK bug: spot metadata parsing can trigger IndexError.
+            # Fall back to clearinghouse state endpoint which skips spot parsing.
+            log.warning("SDK IndexError in user_state (spot metadata); trying clearinghouse fallback")
+            try:
+                import requests
+                base_url = self._hl._info.base_url
+                resp = requests.post(
+                    f"{base_url}/info",
+                    json={"type": "clearinghouseState", "user": self._address},
+                    timeout=10,
+                )
+                data = resp.json()
+                margin_summary = data.get("marginSummary", {})
+                return {
+                    "account_value": float(margin_summary.get("accountValue", 0)),
+                    "total_margin": float(margin_summary.get("totalMarginUsed", 0)),
+                    "withdrawable": float(data.get("withdrawable", 0)),
+                    "address": self._address,
+                    "positions": data.get("assetPositions", []),
+                }
+            except Exception as e2:
+                log.error("Clearinghouse fallback also failed: %s", e2)
+                return {}
         except Exception as e:
             log.error("Failed to get account state: %s", e)
             return {}

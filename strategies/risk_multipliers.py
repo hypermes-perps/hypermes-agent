@@ -2,8 +2,6 @@
 
 Layer 2 (vol binning) and Layer 3 (DD amplification) from RISK_FRAMEWORK.tex.
 These are agent-side computations — no external I/O.
-
-Ported from Tee-work-/strategies/risk_multipliers.py.
 """
 from __future__ import annotations
 

@@ -62,6 +62,9 @@ class TradingConfig:
 
     def to_risk_limits(self):
         from parent.risk_manager import RiskLimits
+        # If mainnet and using default testnet values, switch to mainnet defaults
+        if self.mainnet and self._is_default_risk():
+            return RiskLimits.mainnet_defaults()
         return RiskLimits(
             max_position_qty=Decimal(str(self.max_position_qty)),
             max_notional_usd=Decimal(str(self.max_notional_usd)),
@@ -69,6 +72,15 @@ class TradingConfig:
             max_daily_drawdown_pct=Decimal(str(self.max_daily_drawdown_pct)),
             max_leverage=Decimal(str(self.max_leverage)),
             tvl=Decimal(str(self.tvl)),
+        )
+
+    def _is_default_risk(self) -> bool:
+        """Check if risk params are still at testnet defaults (not user-configured)."""
+        return (
+            self.max_position_qty == 10.0
+            and self.max_notional_usd == 25000.0
+            and self.max_order_size == 5.0
+            and self.tvl == 100000.0
         )
 
     def get_builder_config(self):

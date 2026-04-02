@@ -6,7 +6,7 @@ quote ladder, risk regime classification. Auto-halts on oracle staleness.
 """
 from __future__ import annotations
 
-import strategies._engine_base  # noqa: F401 — adds Tee-work- to sys.path
+import strategies._engine_base  # noqa: F401 — adds quoting_engine to sys.path
 
 from typing import Any, Dict, List, Optional
 

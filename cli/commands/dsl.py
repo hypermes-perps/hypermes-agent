@@ -108,12 +108,13 @@ def dsl_start(
         typer.echo(f"Mode: {'DRY RUN' if dry_run else 'MOCK'}")
     else:
         from cli.hl_adapter import DirectHLProxy
+        from cli.config import TradingConfig
         from parent.hl_proxy import HLProxy
-        import os
 
-        key = os.environ.get("HL_PRIVATE_KEY", "")
-        if not key:
-            typer.echo("Error: HL_PRIVATE_KEY not set")
+        try:
+            key = TradingConfig().get_private_key()
+        except RuntimeError as e:
+            typer.echo(f"Error: {e}", err=True)
             raise typer.Exit(1)
         hl = DirectHLProxy(HLProxy(private_key=key, testnet=not mainnet))
         typer.echo(f"Mode: LIVE ({'mainnet' if mainnet else 'testnet'})")

@@ -5,6 +5,8 @@ import logging
 from typing import Dict, List, TYPE_CHECKING
 
 from common.models import MarketSnapshot, StrategyDecision
+from execution.parent_order import ParentOrder
+from execution.twap import TWAPExecutor, ChildSlice
 from parent.hl_proxy import HLFill
 
 if TYPE_CHECKING:
@@ -18,6 +20,7 @@ class OrderManager:
 
     Uses IOC (Immediate-or-Cancel) orders by default: each tick the strategy
     produces fresh quotes, they either fill immediately or are discarded.
+    Supports TWAP execution for large orders via execution_algo meta field.
     """
 
     def __init__(
@@ -33,21 +36,51 @@ class OrderManager:
         self._builder = builder
         self._total_placed = 0
         self._total_filled = 0
+        self._twap = TWAPExecutor()
 
     def update(
         self,
         decisions: List[StrategyDecision],
         snapshot: MarketSnapshot,
     ) -> List[HLFill]:
-        """Full tick cycle: cancel open orders -> place new -> return fills."""
+        """Full tick cycle: cancel open orders -> TWAP slices -> place new -> return fills."""
         fills: List[HLFill] = []
 
         # 1. Cancel any lingering open orders (safety net for IOC leftovers)
         self.cancel_all()
 
-        # 2. Place new orders from strategy decisions
+        # 2. Process active TWAP orders
+        twap_slices = self._twap.on_tick(snapshot)
+        for s in twap_slices:
+            fill = self._execute_child_slice(s)
+            if fill is not None:
+                fills.append(fill)
+                self._twap.record_fill(
+                    s.parent_order_id, fill.size, fill.price,
+                    snapshot.timestamp_ms,
+                )
+
+        # 3. Place new orders from strategy decisions
         for d in decisions:
             if d.action != "place_order" or d.size <= 0 or d.limit_price <= 0:
+                continue
+
+            # Route to TWAP if execution_algo says so
+            if d.meta.get("execution_algo") == "twap":
+                parent = ParentOrder(
+                    instrument=d.instrument or self.instrument,
+                    side=d.side,
+                    target_qty=d.size,
+                    algo="twap",
+                    duration_ticks=d.meta.get("twap_duration_ticks", 5),
+                    urgency=d.meta.get("twap_urgency", 0.7),
+                    created_at_ms=snapshot.timestamp_ms,
+                )
+                self._twap.submit(parent)
+                log.info("TWAP submitted: %s %s %.6f over %d ticks",
+                         d.side.upper(), parent.instrument,
+                         parent.target_qty, parent.duration_ticks)
+                self._total_placed += 1
                 continue
 
             if self.dry_run:
@@ -71,6 +104,27 @@ class OrderManager:
                 self._total_filled += 1
 
         return fills
+
+    def _execute_child_slice(self, s: ChildSlice) -> HLFill | None:
+        """Execute a single TWAP child slice as an IOC order."""
+        if self.dry_run:
+            log.info("[DRY RUN TWAP] %s %s %.6f @ %.4f",
+                     s.side.upper(), s.instrument, s.size, s.price)
+            self._total_placed += 1
+            return None
+
+        fill = self.hl.place_order(
+            instrument=s.instrument,
+            side=s.side,
+            size=s.size,
+            price=s.price,
+            tif="Ioc",
+            builder=self._builder,
+        )
+        self._total_placed += 1
+        if fill is not None:
+            self._total_filled += 1
+        return fill
 
     def cancel_all(self) -> int:
         """Cancel all open orders for the instrument."""

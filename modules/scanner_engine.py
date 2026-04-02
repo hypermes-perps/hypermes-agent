@@ -178,7 +178,10 @@ class OpportunityScannerEngine:
         for i, ctx in enumerate(asset_ctxs):
             if i >= len(universe):
                 break
-            name = universe[i].get("name", "")
+            try:
+                name = universe[i].get("name", "")
+            except (IndexError, AttributeError):
+                continue
             vol = float(ctx.get("dayNtlVlm", 0))
             if vol < self.config.min_volume_24h:
                 continue

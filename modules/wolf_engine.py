@@ -23,6 +23,7 @@ class WolfAction:
     reason: str = ""
     source: str = ""        # movers_immediate, movers_signal, scanner
     signal_score: float = 0.0
+    execution_algo: str = "immediate"  # "immediate" or "twap"
 
 
 class WolfEngine:
@@ -39,6 +40,7 @@ class WolfEngine:
         slot_prices: Dict[int, float],
         slot_dsl_results: Dict[int, Dict[str, Any]],
         now_ms: int = 0,
+        smart_money_signals: Optional[List[Dict[str, Any]]] = None,
     ) -> List[WolfAction]:
         """Evaluate all positions and signals, return ordered actions.
 
@@ -72,7 +74,10 @@ class WolfEngine:
                 actions.append(exit_action)
 
         # 3. Entry evaluation
-        entry_actions = self._evaluate_entries(state, movers_signals, scanner_opps, now_ms)
+        entry_actions = self._evaluate_entries(
+            state, movers_signals, scanner_opps, now_ms,
+            smart_money_signals=smart_money_signals or [],
+        )
         actions.extend(entry_actions)
 
         return actions
@@ -161,6 +166,7 @@ class WolfEngine:
         movers_signals: List[Dict],
         scanner_opps: List[Dict],
         now_ms: int,
+        smart_money_signals: Optional[List[Dict[str, Any]]] = None,
     ) -> List[WolfAction]:
         """Evaluate potential new entries."""
         cfg = self.config
@@ -181,6 +187,19 @@ class WolfEngine:
                         "source": "movers_immediate",
                         "score": sig.get("confidence", 100),
                         "priority": 1,
+                    })
+
+        # Priority 1.5: Smart money signals (HIGH_CONVICTION) / 2.5 (SMART_MONEY)
+        for sig in (smart_money_signals or []):
+            if sig.get("confidence", 0) >= 60:
+                instrument = sig["asset"] + "-PERP"
+                if instrument not in active_instruments and instrument not in cfg.excluded_instruments:
+                    candidates.append({
+                        "instrument": instrument,
+                        "direction": sig.get("direction", "LONG").lower(),
+                        "source": f"smart_money:{sig.get('signal_type', '')}",
+                        "score": sig.get("confidence", 0),
+                        "priority": 1.5 if sig.get("signal_type") == "HIGH_CONVICTION" else 2.5,
                     })
 
         # Priority 2: Scanner high scores
@@ -236,6 +255,10 @@ class WolfEngine:
             margin = cfg.margin_per_slot
             # Size will be computed by runner using current price + leverage
 
+            # Determine execution algo based on notional size
+            notional = cfg.margin_per_slot * cfg.leverage
+            exec_algo = "twap" if notional > cfg.twap_threshold_usd else "immediate"
+
             actions.append(WolfAction(
                 action="enter",
                 slot_id=slot.slot_id,
@@ -244,6 +267,7 @@ class WolfEngine:
                 reason=f"{cand['source']}: score={cand['score']:.0f}",
                 source=cand["source"],
                 signal_score=cand["score"],
+                execution_algo=exec_algo,
             ))
 
             # Mark slot as taken (so next candidate gets a different slot)

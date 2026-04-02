@@ -21,7 +21,7 @@ ZERO = Decimal("0")
 class RiskLimits:
     """Deterministic policy limits from House Liquidity Risk Framework.
 
-    Testnet-scale defaults — override via constructor for production.
+    Testnet-scale defaults — use mainnet_defaults() for production.
     """
     max_position_qty: Decimal = Decimal("10.0")       # max ETH per instrument
     max_notional_usd: Decimal = Decimal("25000")      # max notional exposure
@@ -30,6 +30,19 @@ class RiskLimits:
     max_leverage: Decimal = Decimal("3.0")             # max leverage
     tvl: Decimal = Decimal("100000")                   # total value locked
     reserve_factor_pct: Decimal = Decimal("10")        # 10% insurance fund
+
+    @classmethod
+    def mainnet_defaults(cls) -> "RiskLimits":
+        """Conservative mainnet defaults — override via config for production."""
+        return cls(
+            max_position_qty=Decimal("2.0"),        # 2 ETH max per instrument
+            max_notional_usd=Decimal("10000"),       # $10k max notional
+            max_order_size=Decimal("1.0"),            # 1 ETH max single order
+            max_daily_drawdown_pct=Decimal("1.0"),   # 1% daily drawdown
+            max_leverage=Decimal("2.0"),              # 2x max leverage
+            tvl=Decimal("50000"),                     # $50k TVL assumption
+            reserve_factor_pct=Decimal("20"),         # 20% insurance fund
+        )
 
     @property
     def reserve_amount(self) -> Decimal:

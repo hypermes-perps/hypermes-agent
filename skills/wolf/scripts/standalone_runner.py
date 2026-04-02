@@ -24,11 +24,17 @@ from modules.dsl_state import DSLState, DSLStateStore
 from modules.howl_adapter import adapt, apply_adjustments
 from modules.howl_engine import HowlEngine, TradeRecord
 from modules.howl_reporter import HowlReporter
+from modules.journal_engine import JournalEngine
+from modules.journal_guard import JournalGuard
+from modules.judge_guard import JudgeGuard
+from modules.memory_engine import MemoryEngine
+from modules.memory_guard import MemoryGuard
 from modules.movers_guard import MoversGuard
 from modules.scanner_guard import ScannerGuard
 from modules.wolf_config import WolfConfig
 from modules.wolf_engine import WolfAction, WolfEngine
 from modules.wolf_state import WolfSlot, WolfState, WolfStateStore
+from execution.portfolio_risk import PortfolioRiskManager, PortfolioRiskConfig
 from parent.store import JSONLStore
 
 log = logging.getLogger("wolf_runner")
@@ -82,6 +88,54 @@ class WolfRunner:
         # Trade logging for HOWL
         self.trade_log = JSONLStore(path=f"{data_dir}/trades.jsonl")
 
+        # Self-improvement subsystems
+        self.memory_engine = MemoryEngine()
+        self.memory_guard = MemoryGuard(data_dir=f"{data_dir}/memory")
+        self.journal_engine = JournalEngine()
+        self.journal_guard = JournalGuard(data_dir=data_dir)
+        self.judge_guard = JudgeGuard(data_dir=data_dir)
+
+        # Obsidian integration (optional)
+        self._obsidian_writer = None
+        self._obsidian_reader = None
+        self._obsidian_context = None
+        if self.config.obsidian_vault_path:
+            try:
+                from modules.obsidian_reader import ObsidianReader
+                from modules.obsidian_writer import ObsidianWriter
+                self._obsidian_reader = ObsidianReader(self.config.obsidian_vault_path)
+                self._obsidian_writer = ObsidianWriter(self.config.obsidian_vault_path)
+                if self._obsidian_reader.available:
+                    self._obsidian_context = self._obsidian_reader.read_trading_context()
+                    log.info("Obsidian vault loaded: %d watchlist, %d theses",
+                             len(self._obsidian_context.watchlist),
+                             len(self._obsidian_context.market_theses))
+            except Exception as e:
+                log.warning("Obsidian integration failed: %s", e)
+
+        # Portfolio risk manager
+        self.portfolio_risk = PortfolioRiskManager(PortfolioRiskConfig(
+            max_correlated_positions=self.config.portfolio_max_correlated,
+            max_same_direction_total=self.config.portfolio_max_same_direction,
+            margin_utilization_warn=self.config.portfolio_margin_warn,
+            margin_utilization_block=self.config.portfolio_margin_block,
+            enabled=self.config.portfolio_risk_enabled,
+        ))
+
+        # Smart money tracker (optional)
+        self.smart_money_tracker = None
+        if self.config.smart_money_enabled and self.config.smart_money_addresses:
+            from modules.smart_money.tracker import SmartMoneyTracker
+            from modules.smart_money.config import SmartMoneyConfig
+            sm_cfg = SmartMoneyConfig(
+                watch_addresses=self.config.smart_money_addresses,
+                min_position_usd=self.config.smart_money_min_position_usd,
+                conviction_threshold=self.config.smart_money_conviction_threshold,
+                poll_interval_ticks=self.config.smart_money_poll_interval_ticks,
+            )
+            self.smart_money_tracker = SmartMoneyTracker(sm_cfg)
+            log.info("Smart money tracker: watching %d addresses", len(sm_cfg.watch_addresses))
+
         # Scheduled task tracking (UTC hour -> last executed date string)
         self._last_scheduled: Dict[str, str] = {}
 
@@ -106,6 +160,19 @@ class WolfRunner:
         log.info("WOLF started: slots=%d leverage=%.0fx budget=$%.0f tick=%ds",
                  self.config.max_slots, self.config.leverage,
                  self.config.total_budget, self.tick_interval)
+
+        # Log session start to memory
+        try:
+            event = self.memory_engine.create_session_event(
+                event_type="session_start",
+                tick_count=self.state.tick_count,
+                total_pnl=self.state.total_pnl,
+                active_slots=len(self.state.active_slots()),
+                total_trades=self.state.total_trades,
+            )
+            self.memory_guard.log_event(event)
+        except Exception:
+            pass  # Memory logging should never break the runner
 
         while self._running:
             if max_ticks > 0 and self.state.tick_count >= max_ticks:
@@ -146,6 +213,14 @@ class WolfRunner:
         # 3. Run movers (every tick)
         movers_signals = self._run_movers()
 
+        # 3b. Run smart money tracker
+        smart_money_signals = []
+        if self.smart_money_tracker:
+            try:
+                smart_money_signals = self.smart_money_tracker.scan(self.hl)
+            except Exception as e:
+                log.warning("Smart money scan failed: %s", e)
+
         # 4. Run scanner (every N ticks)
         scanner_opps = []
         if tick % self.config.scanner_interval_ticks == 0:
@@ -170,6 +245,7 @@ class WolfRunner:
             slot_prices=slot_prices,
             slot_dsl_results=slot_dsl_results,
             now_ms=now_ms,
+            smart_money_signals=smart_money_signals,
         )
 
         # 7. Execute actions
@@ -246,7 +322,10 @@ class WolfRunner:
                 for i, ctx in enumerate(ctxs):
                     if i >= len(universe):
                         break
-                    name = universe[i].get("name", "")
+                    try:
+                        name = universe[i].get("name", "")
+                    except (IndexError, AttributeError):
+                        continue
                     vol = float(ctx.get("dayNtlVlm", 0))
                     if vol >= self.movers_guard.config.volume_min_24h and name:
                         try:
@@ -342,6 +421,24 @@ class WolfRunner:
             mid = float(mids.get(coin, "0"))
             if mid <= 0:
                 log.warning("Cannot enter %s: no mid price", action.instrument)
+                slot.status = "empty"
+                slot.instrument = ""
+                return
+
+            # Portfolio risk check
+            current_positions = {}
+            for s in self.state.active_slots():
+                if s.is_active():
+                    current_positions[s.instrument] = {
+                        "direction": s.direction,
+                        "notional": s.margin_allocated * self.config.leverage,
+                    }
+
+            ok, reason = self.portfolio_risk.check_entry(
+                action.instrument, action.direction, current_positions)
+            if not ok:
+                log.warning("Portfolio risk blocked entry for %s: %s",
+                            action.instrument, reason)
                 slot.status = "empty"
                 slot.instrument = ""
                 return
@@ -453,8 +550,43 @@ class WolfRunner:
             self.state.daily_loss_triggered = True
             log.warning("DAILY LOSS LIMIT triggered: $%.2f", self.state.daily_pnl)
 
+        # Log to trade journal
+        close_ts = int(time.time() * 1000)
+        try:
+            journal_entry = self.journal_engine.create_entry(
+                instrument=slot.instrument,
+                direction=slot.direction,
+                entry_price=slot.entry_price,
+                exit_price=slot.current_price,
+                pnl=pnl,
+                roe_pct=slot.current_roe,
+                entry_source=slot.entry_source,
+                entry_signal_score=slot.entry_signal_score,
+                close_reason=reason,
+                entry_ts=slot.entry_ts,
+                close_ts=close_ts,
+            )
+            self.journal_guard.log_entry(journal_entry)
+
+            # Notable trade -> memory + obsidian
+            if abs(pnl) > self.config.margin_per_slot * 0.1:
+                mem_event = self.memory_engine.create_notable_trade_event(
+                    instrument=slot.instrument,
+                    direction=slot.direction,
+                    pnl=pnl,
+                    roe_pct=slot.current_roe,
+                    entry_source=slot.entry_source,
+                    close_reason=reason,
+                )
+                self.memory_guard.log_event(mem_event)
+
+                if self._obsidian_writer:
+                    self._obsidian_writer.write_notable_trade(journal_entry.to_dict())
+        except Exception as e:
+            log.debug("Journal/memory logging failed: %s", e)
+
         # Reset slot
-        slot.close_ts = int(time.time() * 1000)
+        slot.close_ts = close_ts
         slot.close_reason = reason
         slot.close_pnl = pnl
         slot.status = "empty"
@@ -525,6 +657,31 @@ class WolfRunner:
             report = HowlReporter().generate(metrics, date=ts)
             (howl_dir / f"{ts}.md").write_text(report)
 
+            # Log HOWL review to memory
+            try:
+                howl_event = self.memory_engine.create_howl_event(
+                    win_rate=metrics.win_rate,
+                    net_pnl=metrics.net_pnl,
+                    fdr=metrics.fdr,
+                    round_trips=metrics.total_round_trips,
+                    distilled=summary,
+                )
+                self.memory_guard.log_event(howl_event)
+            except Exception:
+                pass
+
+            # Write HOWL report to Obsidian
+            if self._obsidian_writer:
+                try:
+                    date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                    self._obsidian_writer.write_howl_report(
+                        briefing_md=report, date=date,
+                        win_rate=metrics.win_rate, net_pnl=metrics.net_pnl,
+                        fdr=metrics.fdr, round_trips=metrics.total_round_trips,
+                    )
+                except Exception:
+                    pass
+
             # Auto-adjust if enabled and enough data
             if (self.config.howl_auto_adjust
                     and metrics.total_round_trips >= self.config.howl_min_round_trips):
@@ -534,8 +691,49 @@ class WolfRunner:
                     log.info(adj_log)
                     # Re-sync engine with updated config
                     self.engine = WolfEngine(self.config)
+
+                    # Log param changes to memory
+                    try:
+                        pc_event = self.memory_engine.create_param_change_event(
+                            adjustments, metrics_summary=summary,
+                        )
+                        self.memory_guard.log_event(pc_event)
+                    except Exception:
+                        pass
                 else:
                     log.info("HOWL: no adjustments needed")
+
+            # Run Judge evaluation
+            try:
+                judge_report = self.judge_guard.run_evaluation(self.trade_log)
+                if judge_report.round_trips_evaluated > 0:
+                    self.judge_guard.save_report(judge_report)
+                    self.judge_guard.apply_to_memory(judge_report, self.memory_guard)
+                    if judge_report.config_recommendations:
+                        recs = "; ".join(r.get("summary", "") for r in judge_report.config_recommendations)
+                        log.info("Judge recommendations: %s", recs)
+
+                    # Write Judge report to Obsidian
+                    if self._obsidian_writer:
+                        date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                        self._obsidian_writer.write_judge_report(
+                            judge_report.to_dict(), date=date,
+                        )
+            except Exception as e:
+                log.debug("Judge evaluation failed: %s", e)
+
+            # Update playbook from closed slot data
+            try:
+                closed = [
+                    s.to_dict() if hasattr(s, 'to_dict') else {}
+                    for s in self.state.slots if s.status == "empty" and s.close_pnl != 0
+                ]
+                if closed:
+                    playbook = self.memory_guard.load_playbook()
+                    playbook = self.memory_engine.update_playbook(playbook, closed)
+                    self.memory_guard.save_playbook(playbook)
+            except Exception:
+                pass
 
         except Exception as e:
             log.warning("HOWL review failed: %s", e)
@@ -561,6 +759,23 @@ class WolfRunner:
             self._last_scheduled["howl_report"] = today
             log.info("Scheduled HOWL report (UTC %02d:00)", current_hour)
             self._run_howl()
+
+        # Nightly review (today vs 7-day average)
+        if (self.config.nightly_review_enabled
+                and current_hour == self.config.nightly_review_hour
+                and self._last_scheduled.get("nightly_review") != today):
+            self._last_scheduled["nightly_review"] = today
+            log.info("Running nightly review (UTC %02d:00)", current_hour)
+            self._run_nightly_review(today)
+
+        # Obsidian context refresh
+        if (self._obsidian_reader
+                and self.state.tick_count % self.config.obsidian_scan_interval_ticks == 0
+                and self.state.tick_count > 0):
+            try:
+                self._obsidian_context = self._obsidian_reader.read_trading_context()
+            except Exception:
+                pass
 
     def _print_status(self) -> None:
         """Print current WOLF status."""
@@ -602,6 +817,68 @@ class WolfRunner:
             print("  ** Daily loss limit was triggered **")
         print(f"{'='*60}\n")
 
+    def _run_nightly_review(self, today: str) -> None:
+        """Run nightly review comparing today vs. 7-day rolling average."""
+        try:
+            raw_trades = self.trade_log.read_all()
+            if not raw_trades:
+                return
+
+            now_ms = int(time.time() * 1000)
+            day_ms = 86_400_000
+            midnight = now_ms - (now_ms % day_ms)
+
+            today_trades = [
+                TradeRecord.from_dict(t) for t in raw_trades
+                if t.get("timestamp_ms", 0) >= midnight
+            ]
+            week_trades = [
+                TradeRecord.from_dict(t) for t in raw_trades
+                if t.get("timestamp_ms", 0) >= midnight - (7 * day_ms)
+            ]
+
+            result = self.journal_engine.compute_nightly_review(
+                today_trades, week_trades, date=today,
+            )
+
+            # Save briefing
+            howl_dir = Path(self.data_dir) / "howl"
+            howl_dir.mkdir(parents=True, exist_ok=True)
+            (howl_dir / f"{today}-nightly.md").write_text(result.briefing_md)
+
+            # Write findings to memory
+            for finding in result.key_findings:
+                event = self.memory_engine.create_howl_event(
+                    distilled=f"Nightly: {finding}",
+                )
+                self.memory_guard.log_event(event)
+
+            # Append to Obsidian daily note
+            if self._obsidian_writer:
+                summary_lines = [f"**{today}** — {result.round_trips_today} round trips"]
+                for f in result.key_findings:
+                    summary_lines.append(f"- {f}")
+                self._obsidian_writer.append_to_daily(today, "\n".join(summary_lines))
+
+            log.info("Nightly review: %d RTs today, findings: %s",
+                     result.round_trips_today, "; ".join(result.key_findings))
+
+        except Exception as e:
+            log.warning("Nightly review failed: %s", e)
+
     def _handle_shutdown(self, signum, frame):
         log.info("Shutdown signal received")
         self._running = False
+
+        # Log session end to memory
+        try:
+            event = self.memory_engine.create_session_event(
+                event_type="session_end",
+                tick_count=self.state.tick_count,
+                total_pnl=self.state.total_pnl,
+                active_slots=len(self.state.active_slots()),
+                total_trades=self.state.total_trades,
+            )
+            self.memory_guard.log_event(event)
+        except Exception:
+            pass

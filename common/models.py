@@ -1,27 +1,9 @@
-"""Shared Pydantic models for the TEE clearing system."""
+"""Shared Pydantic models for the trading system."""
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
-
-
-class AttestationPayload(BaseModel):
-    type: str = "mock"
-    document: str = ""
-    payload_hash: str = ""
-    pcrs: Dict[str, str] = Field(default_factory=dict)
-
-
-class ClearingEnvelope(BaseModel):
-    round_id: str
-    clearing_result: Dict[str, Any]  # serialised ClearingResult
-    clearing_result_hash: str
-    agent_public_key: str
-    agent_signature: str
-    attestation: AttestationPayload
-    policy_hash: str = ""
-    prev_envelope_hash: Optional[str] = None
 
 
 class MarketSnapshot(BaseModel):
@@ -61,26 +43,3 @@ class Decision(BaseModel):
     size: float = 0.0
     limit_price: float = 0.0
     timestamp_ms: int = 0
-
-
-class DecisionEnvelope(BaseModel):
-    """Per-decision envelope — matches KorAI MVP Listing 1 exactly.
-
-    Each clearing fill becomes one DecisionEnvelope in the proof log.
-    """
-    version: str = "v1"
-    decision: Decision
-    decision_hash: str
-    agent_public_key: str
-    agent_signature: str
-    attestation: AttestationPayload
-    policy_hash: str = ""
-    strategy_artifact_hash: str = ""
-    prev_envelope_hash: Optional[str] = None
-
-
-class EnclaveIdentity(BaseModel):
-    enclave_pubkey: str
-    attestation: str = ""
-    pcrs: Dict[str, str] = Field(default_factory=dict)
-    boot_timestamp_ms: int = 0

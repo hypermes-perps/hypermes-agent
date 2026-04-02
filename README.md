@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/strategies-14-C9A84C" alt="Strategies" />
   <img src="https://img.shields.io/badge/tests-263%20passing-brightgreen" alt="Tests" />
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License" />
-  <img src="https://img.shields.io/badge/MCP-enabled-8A2BE2" alt="MCP" />
+  <img src="https://img.shields.io/badge/MCP-16%20tools-8A2BE2" alt="MCP" />
 </p>
 
 <p align="center">
@@ -139,14 +139,6 @@ Market Data -> Composite Fair Value -> Dynamic Spread -> Inventory Skew -> Multi
 | Google Gemini | `gemini-2.0-flash` (default), `gemini-2.5-pro` | `GEMINI_API_KEY` |
 | Anthropic Claude | `claude-haiku-4-5-20251001`, `claude-sonnet-4-20250514` | `ANTHROPIC_API_KEY` |
 | OpenAI | `gpt-4o`, `gpt-4o-mini`, `o3-mini` | `OPENAI_API_KEY` |
-
----
-
-## TEE Clearing House
-
-This CLI implements the **agent side** of the [Nunchi TEE clearing architecture](https://docs.nunchi.trade). Agents connect to a House Enclave — a TEE-secured clearing venue — and compete via commit-reveal protocol with ECIES encryption and KKT optimality certificates.
-
-Access to the clearing house is currently invite-only. See [docs.nunchi.trade](https://docs.nunchi.trade) for the full clearing protocol specification, or reach out on [Discord](https://discord.gg/nunchi) to request access.
 
 ---
 
@@ -387,9 +379,15 @@ hl mcp serve                      # stdio transport (default)
 hl mcp serve --transport sse      # SSE transport
 ```
 
-**13 tools exposed:** `account`, `status`, `trade`, `run_strategy`, `strategies`, `scanner_run`, `wolf_status`, `wolf_run`, `howl_run`, `setup_check`, `builder_status`, `wallet_list`, `wallet_auto`
+**16 tools exposed:** `account`, `status`, `trade`, `run_strategy`, `strategies`, `scanner_run`, `wolf_status`, `wolf_run`, `howl_run`, `setup_check`, `builder_status`, `wallet_list`, `wallet_auto`, `agent_memory`, `trade_journal`, `judge_report`
 
-Fast tools (strategies, builder, wallet, setup) call Python directly — zero subprocess overhead.
+Fast tools (strategies, builder, wallet, setup, memory, journal, judge) call Python directly — zero subprocess overhead.
+
+### HTTP API & SSE
+
+Every deployed agent also exposes an HTTP REST API and SSE real-time feed for dashboards, monitoring, and external integrations. A separate leaderboard microservice tracks agent PnL rankings.
+
+**[Full API Reference →](docs/api-reference.md)**
 
 ---
 
@@ -472,7 +470,7 @@ hl run engine_mm -i BTCSWP-USDYP --tick 10
 ```
 cli/           CLI commands and trading engine
   commands/    Subcommand modules (run, wolf, scanner, movers, dsl, howl, house, ...)
-  mcp_server.py  MCP server (13 tools via FastMCP)
+  mcp_server.py  MCP server (16 tools via FastMCP)
   hl_adapter.py  Direct HL API adapter (live + mock)
   builder_fee.py Builder fee config (HL native BuilderInfo)
   keystore.py    Encrypted keystore (geth-compatible)
@@ -492,8 +490,6 @@ skills/        Agent Skills (SKILL.md + runners)
   dsl/         Dynamic stop loss
   howl/        Performance review
 sdk/           Strategy base class and model registry
-agent/         TEE clearing agent client (ECIES, commit-reveal)
-clearing/      TEE clearing protocol types and crypto
 parent/        HL API proxy, position tracking, risk management
 tests/         Test suite (263 tests)
 ```

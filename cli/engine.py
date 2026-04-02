@@ -16,6 +16,7 @@ from sdk.strategy_sdk.base import BaseStrategy, StrategyContext
 
 from cli.display import shutdown_summary, tick_line
 from cli.order_manager import OrderManager
+from execution.order_book import ManagedOrderBook
 
 log = logging.getLogger("engine")
 ZERO = Decimal("0")
@@ -60,6 +61,9 @@ class TradingEngine:
         self.dsl_guard = None   # type: ignore[assignment]
         self.dsl_config = None  # type: ignore[assignment]
 
+        # Managed order book (brackets, conditionals, pegged orders)
+        self.managed_orders = ManagedOrderBook()
+
         # Optional markout tracker (measures fill quality vs anomaly state)
         self.markout_tracker = None  # type: ignore[assignment]
 
@@ -75,10 +79,16 @@ class TradingEngine:
         signal.signal(signal.SIGINT, self._handle_shutdown)
         signal.signal(signal.SIGTERM, self._handle_shutdown)
 
+        # Set leverage from risk config (not hardcoded)
+        if not self.dry_run and hasattr(self.hl, 'set_leverage'):
+            coin = self.instrument.replace("-PERP", "").replace("-perp", "")
+            max_lev = int(self.risk_manager.limits.max_leverage)
+            self.hl.set_leverage(max_lev, coin)
+
         mode = "DRY RUN" if self.dry_run else "LIVE"
-        log.info("Engine started: strategy=%s instrument=%s tick=%.1fs mode=%s",
+        log.info("Engine started: strategy=%s instrument=%s tick=%.1fs mode=%s leverage=%sx",
                  self.strategy.strategy_id, self.instrument,
-                 self.tick_interval, mode)
+                 self.tick_interval, mode, self.risk_manager.limits.max_leverage)
 
         while self._running:
             if max_ticks > 0 and self.tick_count >= max_ticks:
@@ -141,6 +151,10 @@ class TradingEngine:
 
         # 4. Run strategy
         decisions = self.strategy.on_tick(snapshot, context=context)
+
+        # 4b. Process managed orders (brackets, conditionals, pegged)
+        managed_decisions = self.managed_orders.on_tick(snapshot)
+        decisions.extend(managed_decisions)
 
         # 5. Filter through risk manager
         order_dicts = [
@@ -321,6 +335,61 @@ class TradingEngine:
         log.info("DSL guard activated: entry=%.4f size=%.6f dir=%s",
                  entry, float(abs(pos.net_qty)), direction)
 
+    def _close_all_positions(self) -> None:
+        """Close all open positions on shutdown to avoid orphaned exposure."""
+        agent_id = self.strategy.strategy_id
+        pos = self.position_tracker.get_agent_position(agent_id, self.instrument)
+        if pos.net_qty == ZERO:
+            return
+
+        close_side = "sell" if pos.net_qty > ZERO else "buy"
+        size = float(abs(pos.net_qty))
+
+        try:
+            snapshot = self.hl.get_snapshot(self.instrument)
+            if close_side == "sell":
+                price = round(float(snapshot.bid) * 0.995, 6)
+            else:
+                price = round(float(snapshot.ask) * 1.005, 6)
+        except Exception:
+            log.warning("Could not get snapshot for shutdown close — using last known price")
+            price = float(pos.avg_entry_price)
+
+        if self.dry_run:
+            log.info("[DRY RUN] Shutdown close: %s %.6f @ %.4f", close_side, size, price)
+            return
+
+        log.info("Closing position on shutdown: %s %.6f %s @ %.4f",
+                 close_side, size, self.instrument, price)
+        fill = self.hl.place_order(
+            instrument=self.instrument,
+            side=close_side,
+            size=size,
+            price=price,
+            tif="Ioc",
+            builder=self.builder,
+        )
+        if fill:
+            self.position_tracker.apply_fill(
+                agent_id, self.instrument, fill.side,
+                fill.quantity, fill.price,
+            )
+            self.trade_log.append({
+                "tick": self.tick_count,
+                "oid": fill.oid,
+                "instrument": fill.instrument,
+                "side": fill.side,
+                "price": str(fill.price),
+                "quantity": str(fill.quantity),
+                "timestamp_ms": fill.timestamp_ms,
+                "fee": str(fill.fee),
+                "strategy": self.strategy.strategy_id,
+                "meta": "shutdown_close",
+            })
+            log.info("Shutdown close filled: %s %s @ %s", fill.side, fill.quantity, fill.price)
+        else:
+            log.warning("Shutdown close did not fill — position may remain open on exchange")
+
     def _log_tick(self, snapshot, decisions, fills, ok: bool) -> None:
         agent_id = self.strategy.strategy_id
         pos = self.position_tracker.get_agent_position(agent_id, self.instrument)
@@ -347,6 +416,10 @@ class TradingEngine:
     def _shutdown(self):
         log.info("Shutting down engine...")
         self.order_manager.cancel_all()
+
+        # Close any open positions to avoid orphaned exposure
+        self._close_all_positions()
+
         self._persist_state()
 
         # Flush any pending markout records

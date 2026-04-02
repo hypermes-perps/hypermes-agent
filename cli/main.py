@@ -1,4 +1,4 @@
-"""hl — Autonomous Hyperliquid trading CLI built on Tee-work strategies."""
+"""hl — Autonomous Hyperliquid trading CLI."""
 from __future__ import annotations
 
 import sys
@@ -13,7 +13,7 @@ if _root not in sys.path:
 
 app = typer.Typer(
     name="hl",
-    help="Autonomous Hyperliquid trader — direct HL API execution with TEE strategies.",
+    help="Autonomous Hyperliquid trader — direct HL API execution.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -27,13 +27,13 @@ from cli.commands.dsl import dsl_app
 from cli.commands.scanner import scanner_app
 from cli.commands.movers import movers_app
 from cli.commands.wolf import wolf_app
-from cli.commands.house import house_app
 from cli.commands.builder import builder_app
 from cli.commands.howl import howl_app
 from cli.commands.wallet import wallet_app
 from cli.commands.setup import setup_app
 from cli.commands.mcp import mcp_app
 from cli.commands.skills import skills_app
+from cli.commands.journal import journal_app
 
 app.command("run", help="Start autonomous trading with a strategy")(run_cmd)
 app.command("status", help="Show positions, PnL, and risk state")(status_cmd)
@@ -44,13 +44,13 @@ app.add_typer(dsl_app, name="dsl", help="Dynamic Stop Loss trailing stop system"
 app.add_typer(scanner_app, name="scanner", help="Opportunity scanner — screen HL perps for setups")
 app.add_typer(movers_app, name="movers", help="Emerging movers — detect assets with capital inflow")
 app.add_typer(wolf_app, name="wolf", help="WOLF strategy — autonomous multi-slot trading")
-app.add_typer(house_app, name="house", help="TEE clearing house — join as agent")
 app.add_typer(builder_app, name="builder", help="Builder fee — revenue collection on trades")
 app.add_typer(howl_app, name="howl", help="HOWL — nightly performance review and self-improvement")
 app.add_typer(wallet_app, name="wallet", help="Encrypted keystore wallet management")
 app.add_typer(setup_app, name="setup", help="Environment validation and setup")
 app.add_typer(mcp_app, name="mcp", help="MCP server — AI agent tool discovery")
 app.add_typer(skills_app, name="skills", help="Skill discovery and registry")
+app.add_typer(journal_app, name="journal", help="Trade journal — structured position records with reasoning")
 
 
 def main():

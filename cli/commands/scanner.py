@@ -180,12 +180,13 @@ def _run_scanner(
         typer.echo("Mode: MOCK")
     else:
         from cli.hl_adapter import DirectHLProxy
+        from cli.config import TradingConfig
         from parent.hl_proxy import HLProxy
-        import os
 
-        private_key = os.environ.get("HL_PRIVATE_KEY", "")
-        if not private_key:
-            typer.echo("Error: HL_PRIVATE_KEY not set", err=True)
+        try:
+            private_key = TradingConfig().get_private_key()
+        except RuntimeError as e:
+            typer.echo(f"Error: {e}", err=True)
             raise typer.Exit(1)
         raw_hl = HLProxy(private_key=private_key, testnet=not mainnet)
         hl = DirectHLProxy(raw_hl)
