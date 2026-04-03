@@ -39,6 +39,7 @@ class MeanReversionStrategy(BaseStrategy):
                 side="sell",
                 size=self.size,
                 limit_price=round(snapshot.mid_price, 2),
+                order_type="Ioc",
                 meta={"signal": "overbought", "deviation_bps": round(deviation_bps, 2)},
             )]
         elif deviation_bps < -self.threshold_bps:
@@ -48,6 +49,7 @@ class MeanReversionStrategy(BaseStrategy):
                 side="buy",
                 size=self.size,
                 limit_price=round(snapshot.mid_price, 2),
+                order_type="Ioc",
                 meta={"signal": "oversold", "deviation_bps": round(deviation_bps, 2)},
             )]
         else:

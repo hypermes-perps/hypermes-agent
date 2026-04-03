@@ -78,6 +78,7 @@ class MomentumBreakoutStrategy(BaseStrategy):
                         side="sell",
                         size=abs(ctx.position_qty),
                         limit_price=round(snapshot.bid, 2),
+                        order_type="Ioc",
                         meta={"signal": "trailing_stop_long", "stop_price": round(stop_price, 2)},
                     ))
             else:
@@ -89,6 +90,7 @@ class MomentumBreakoutStrategy(BaseStrategy):
                         side="buy",
                         size=abs(ctx.position_qty),
                         limit_price=round(snapshot.ask, 2),
+                        order_type="Ioc",
                         meta={"signal": "trailing_stop_short", "stop_price": round(stop_price, 2)},
                     ))
             return orders
@@ -106,6 +108,7 @@ class MomentumBreakoutStrategy(BaseStrategy):
                     "breakout_bps": round(upside_bps, 2),
                     "volume_surge": True,
                 },
+                order_type="Ioc",
             ))
         elif downside_bps > self.breakout_threshold_bps and vol_surge:
             orders.append(StrategyDecision(
@@ -119,6 +122,7 @@ class MomentumBreakoutStrategy(BaseStrategy):
                     "breakout_bps": round(downside_bps, 2),
                     "volume_surge": True,
                 },
+                order_type="Ioc",
             ))
 
         return orders

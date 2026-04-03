@@ -30,6 +30,7 @@ class StrategyDecision(BaseModel):
     side: str = ""        # "buy" or "sell"
     size: float = 0.0
     limit_price: float = 0.0
+    order_type: str = "Gtc"  # "Gtc" (rest on book), "Ioc" (cross spread), "Alo" (maker-only)
     meta: Dict[str, Any] = Field(default_factory=dict)
 
 

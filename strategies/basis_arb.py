@@ -57,6 +57,7 @@ class BasisArbStrategy(BaseStrategy):
                     side="sell",
                     size=self.size,
                     limit_price=round(snapshot.bid, 2),
+                    order_type="Ioc",
                     meta={
                         "signal": "short_contango",
                         "basis_ann_bps": round(basis_ann_bps, 2),
@@ -71,6 +72,7 @@ class BasisArbStrategy(BaseStrategy):
                     side="sell",
                     size=abs(ctx.position_qty),
                     limit_price=round(snapshot.bid, 2),
+                    order_type="Ioc",
                     meta={"signal": "close_wrong_side", "basis_ann_bps": round(basis_ann_bps, 2)},
                 ))
         elif basis_ann_bps < -self.basis_threshold_bps:
@@ -82,6 +84,7 @@ class BasisArbStrategy(BaseStrategy):
                     side="buy",
                     size=self.size,
                     limit_price=round(snapshot.ask, 2),
+                    order_type="Ioc",
                     meta={
                         "signal": "long_backwardation",
                         "basis_ann_bps": round(basis_ann_bps, 2),
@@ -96,6 +99,7 @@ class BasisArbStrategy(BaseStrategy):
                     side="buy",
                     size=abs(ctx.position_qty),
                     limit_price=round(snapshot.ask, 2),
+                    order_type="Ioc",
                     meta={"signal": "close_wrong_side", "basis_ann_bps": round(basis_ann_bps, 2)},
                 ))
 

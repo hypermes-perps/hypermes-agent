@@ -69,6 +69,7 @@ class HedgeAgent(BaseStrategy):
             side=side,
             size=hedge_size,
             limit_price=price,
+            order_type="Ioc",
             meta={
                 "signal": signal,
                 "inventory": q,

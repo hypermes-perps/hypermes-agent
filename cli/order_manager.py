@@ -18,8 +18,12 @@ log = logging.getLogger("order_manager")
 class OrderManager:
     """Manages order lifecycle each tick: cancel stale -> place new -> collect fills.
 
-    Uses IOC (Immediate-or-Cancel) orders by default: each tick the strategy
-    produces fresh quotes, they either fill immediately or are discarded.
+    Respects each StrategyDecision's order_type field:
+    - "Gtc" (default): rests on book as passive limit order (MM strategies)
+    - "Ioc": crosses spread for immediate fill (directional strategies)
+    - "Alo": maker-only, rejects if it would cross
+
+    Each tick cancels stale orders before placing fresh quotes.
     Supports TWAP execution for large orders via execution_algo meta field.
     """
 
@@ -95,7 +99,7 @@ class OrderManager:
                 side=d.side,
                 size=d.size,
                 price=d.limit_price,
-                tif="Ioc",
+                tif=d.order_type,
                 builder=self._builder,
             )
             self._total_placed += 1

@@ -64,6 +64,7 @@ class AggressiveTaker(BaseStrategy):
                 side="buy",
                 size=buy_size,
                 limit_price=round(snapshot.ask + 3.0, 2),  # well above ask → crosses all MMs
+                order_type="Ioc",
                 meta={"signal": "aggressive_buy", "bias": round(bias, 3)},
             ),
             StrategyDecision(
@@ -72,6 +73,7 @@ class AggressiveTaker(BaseStrategy):
                 side="sell",
                 size=sell_size,
                 limit_price=round(snapshot.bid - 3.0, 2),  # well below bid → crosses all MMs
+                order_type="Ioc",
                 meta={"signal": "aggressive_sell", "bias": round(bias, 3)},
             ),
         ]

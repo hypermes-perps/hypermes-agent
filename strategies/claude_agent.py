@@ -464,6 +464,7 @@ class ClaudeStrategy(BaseStrategy):
                 side=side,
                 size=size,
                 limit_price=round(price, 2),
+                order_type="Ioc",
                 meta={
                     "signal": "llm_agent",
                     "reasoning": reasoning,
