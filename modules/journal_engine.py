@@ -81,7 +81,7 @@ class NightlyReviewResult:
 # ---------------------------------------------------------------------------
 
 _QUALITY_THRESHOLDS = {
-    "scanner": {"good_score": 200, "fair_score": 170},
+    "radar": {"good_score": 200, "fair_score": 170},
     "movers_immediate": {"good_score": 100, "fair_score": 80},
     "movers_signal": {"good_score": 80, "fair_score": 60},
 }
@@ -228,8 +228,8 @@ class JournalEngine:
         if source == "movers_immediate":
             return (f"Entered {instrument} {direction} on immediate mover signal "
                     f"(OI breakout + volume surge, confidence {score:.0f})")
-        elif source == "scanner":
-            return (f"Entered {instrument} {direction} on scanner opportunity "
+        elif source == "radar":
+            return (f"Entered {instrument} {direction} on radar opportunity "
                     f"(score {score:.0f}/400, above threshold)")
         elif source == "movers_signal":
             return (f"Entered {instrument} {direction} on movers signal "
@@ -239,8 +239,8 @@ class JournalEngine:
     @staticmethod
     def _generate_exit_reasoning(close_reason: str, roe_pct: float, holding_ms: int) -> str:
         hours = holding_ms / 3_600_000
-        if close_reason == "dsl_close":
-            return f"DSL trailing stop triggered at {roe_pct:+.1f}% ROE after {hours:.1f}h"
+        if close_reason == "guard_close":
+            return f"Guard trailing stop triggered at {roe_pct:+.1f}% ROE after {hours:.1f}h"
         elif close_reason == "conviction_collapse":
             return f"Signal lost conviction, exited at {roe_pct:+.1f}% ROE after {hours:.1f}h"
         elif close_reason == "stagnation":
@@ -272,15 +272,15 @@ class JournalEngine:
         parts = []
         if quality == "poor" and source == "movers_immediate":
             parts.append("Immediate mover signal was a false positive. Consider requiring volume confirmation.")
-        elif quality == "poor" and source == "scanner":
-            parts.append("High-score scanner entry lost money. Check if macro conditions were unfavorable.")
+        elif quality == "poor" and source == "radar":
+            parts.append("High-score radar entry lost money. Check if macro conditions were unfavorable.")
         elif quality == "poor":
             parts.append(f"Signal from {source} did not translate to profit. Review entry criteria.")
 
         if close_reason == "conviction_collapse" and roe_pct < -2:
             parts.append("Conviction collapse with significant loss — tighter stop or faster exit needed.")
-        elif close_reason == "dsl_close" and roe_pct > 5:
-            parts.append("DSL captured a good move. Current tier settings are working.")
+        elif close_reason == "guard_close" and roe_pct > 5:
+            parts.append("Guard captured a good move. Current tier settings are working.")
         elif close_reason == "stagnation" and roe_pct > 0:
             parts.append("Stagnation exit with profit — patience paid off but momentum was limited.")
 

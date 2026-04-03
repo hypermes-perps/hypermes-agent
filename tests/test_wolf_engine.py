@@ -75,14 +75,14 @@ class TestExitLogic:
     def setup_method(self):
         self.engine = WolfEngine(WolfConfig(max_negative_roe=-5.0))
 
-    def test_dsl_close(self):
+    def test_guard_close(self):
         state = _make_state(slots=[_active_slot(0, "ETH-PERP")])
         dsl_results = {0: {"action": "close", "reason": "tier_breach"}}
 
         actions = self.engine.evaluate(state, [], [], {}, dsl_results)
         exits = [a for a in actions if a.action == "exit"]
         assert len(exits) == 1
-        assert "dsl_close" in exits[0].reason
+        assert "guard_close" in exits[0].reason
 
     def test_hard_stop(self):
         state = _make_state(slots=[
@@ -160,7 +160,7 @@ class TestExitLogic:
 class TestEntryLogic:
     def setup_method(self):
         self.engine = WolfEngine(WolfConfig(
-            scanner_score_threshold=170,
+            radar_score_threshold=170,
             movers_confidence_threshold=70.0,
         ))
 
@@ -179,7 +179,7 @@ class TestEntryLogic:
         assert entries[0].instrument == "ETH-PERP"
         assert entries[0].source == "movers_immediate"
 
-    def test_scanner_entry(self):
+    def test_radar_entry(self):
         state = _make_state()
         scanner = [{
             "asset": "SOL",
@@ -191,9 +191,9 @@ class TestEntryLogic:
         entries = [a for a in actions if a.action == "enter"]
         assert len(entries) == 1
         assert entries[0].instrument == "SOL-PERP"
-        assert entries[0].source == "scanner"
+        assert entries[0].source == "radar"
 
-    def test_scanner_below_threshold_skipped(self):
+    def test_radar_below_threshold_skipped(self):
         state = _make_state()
         scanner = [{"asset": "SOL", "direction": "LONG", "final_score": 150}]
 
@@ -308,7 +308,7 @@ class TestEntryLogic:
 
 
 class TestPriorityOrder:
-    def test_movers_immediate_before_scanner(self):
+    def test_movers_immediate_before_radar(self):
         engine = WolfEngine(WolfConfig(max_slots=1))
         state = _make_state(max_slots=1)
 
@@ -326,7 +326,7 @@ class TestPriorityOrder:
         assert entries[0].instrument == "ETH-PERP"
         assert entries[0].source == "movers_immediate"
 
-    def test_scanner_before_movers_signal(self):
+    def test_radar_before_movers_signal(self):
         engine = WolfEngine(WolfConfig(max_slots=1))
         state = _make_state(max_slots=1)
 
@@ -342,7 +342,7 @@ class TestPriorityOrder:
         entries = [a for a in actions if a.action == "enter"]
         assert len(entries) == 1
         assert entries[0].instrument == "SOL-PERP"
-        assert entries[0].source == "scanner"
+        assert entries[0].source == "radar"
 
 
 class TestSlotManagement:
@@ -430,7 +430,7 @@ class TestConfigPresets:
         default = WOLF_PRESETS["default"]
         aggressive = WOLF_PRESETS["aggressive"]
         assert aggressive.leverage >= default.leverage
-        assert aggressive.scanner_score_threshold <= default.scanner_score_threshold
+        assert aggressive.radar_score_threshold <= default.radar_score_threshold
         assert aggressive.daily_loss_limit >= default.daily_loss_limit
 
     def test_margin_auto_computed(self):
