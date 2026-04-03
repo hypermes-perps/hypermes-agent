@@ -63,7 +63,7 @@ app.use("/api", (req, res, next) => {
 app.get("/status", async (req, res) => {
   const { execSync } = require("child_process");
   try {
-    const output = execSync("python3 -m cli.main wolf status", {
+    const output = execSync("python3 -m cli.main apex status", {
       timeout: 10000,
       encoding: "utf-8",
       cwd: "/agent-cli",
@@ -160,7 +160,7 @@ app.post("/api/resume", (req, res) => {
 
 // API: Configure agent (write config override)
 app.post("/api/configure", express.json(), (req, res) => {
-  const configPath = path.join(DATA_DIR, "wolf", "config-override.json");
+  const configPath = path.join(DATA_DIR, "apex", "config-override.json");
   try {
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
     fs.writeFileSync(configPath, JSON.stringify(req.body, null, 2));
@@ -184,11 +184,11 @@ app.get("/api/trades", (req, res) => {
   }
 });
 
-// API: HOWL reports
-app.get("/api/howl", (req, res) => {
+// API: REFLECT reports
+app.get("/api/reflect", (req, res) => {
   try {
     const output = execSync(
-      `python3 -m cli.api.status_reader howl --data-dir ${DATA_DIR}`,
+      `python3 -m cli.api.status_reader reflect --data-dir ${DATA_DIR}`,
       { timeout: 10000, encoding: "utf-8", cwd: AGENT_CLI_DIR, stdio: ["pipe", "pipe", "pipe"] }
     );
     res.json(JSON.parse(output.trim()));

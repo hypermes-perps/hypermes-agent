@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from modules.howl_engine import HowlEngine, HowlMetrics, TradeRecord
+from modules.reflect_engine import ReflectEngine, ReflectMetrics, TradeRecord
 
 
 # ---------------------------------------------------------------------------
@@ -82,8 +82,8 @@ class NightlyReviewResult:
 
 _QUALITY_THRESHOLDS = {
     "radar": {"good_score": 200, "fair_score": 170},
-    "movers_immediate": {"good_score": 100, "fair_score": 80},
-    "movers_signal": {"good_score": 80, "fair_score": 60},
+    "pulse_immediate": {"good_score": 100, "fair_score": 80},
+    "pulse_signal": {"good_score": 80, "fair_score": 60},
 }
 
 
@@ -152,7 +152,7 @@ class JournalEngine:
         date: str = "",
     ) -> NightlyReviewResult:
         """Compare today's performance to 7-day rolling average."""
-        engine = HowlEngine()
+        engine = ReflectEngine()
 
         metrics_today = engine.compute(today_trades)
         metrics_week = engine.compute(week_trades)
@@ -212,7 +212,7 @@ class JournalEngine:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _extract_key_metrics(m: HowlMetrics) -> Dict[str, Any]:
+    def _extract_key_metrics(m: ReflectMetrics) -> Dict[str, Any]:
         return {
             "round_trips": m.total_round_trips,
             "win_rate": round(m.win_rate, 1),
@@ -225,14 +225,14 @@ class JournalEngine:
 
     @staticmethod
     def _generate_entry_reasoning(source: str, score: float, instrument: str, direction: str) -> str:
-        if source == "movers_immediate":
+        if source == "pulse_immediate":
             return (f"Entered {instrument} {direction} on immediate mover signal "
                     f"(OI breakout + volume surge, confidence {score:.0f})")
         elif source == "radar":
             return (f"Entered {instrument} {direction} on radar opportunity "
                     f"(score {score:.0f}/400, above threshold)")
-        elif source == "movers_signal":
-            return (f"Entered {instrument} {direction} on movers signal "
+        elif source == "pulse_signal":
+            return (f"Entered {instrument} {direction} on pulse signal "
                     f"(confidence {score:.0f})")
         return f"Entered {instrument} {direction} via {source} (score {score:.0f})"
 
@@ -270,7 +270,7 @@ class JournalEngine:
         quality: str, source: str, close_reason: str, roe_pct: float, pnl: float,
     ) -> str:
         parts = []
-        if quality == "poor" and source == "movers_immediate":
+        if quality == "poor" and source == "pulse_immediate":
             parts.append("Immediate mover signal was a false positive. Consider requiring volume confirmation.")
         elif quality == "poor" and source == "radar":
             parts.append("High-score radar entry lost money. Check if macro conditions were unfavorable.")
@@ -299,7 +299,7 @@ class JournalEngine:
         avg: Dict,
         comparison: Dict,
         findings: List[str],
-        metrics: HowlMetrics,
+        metrics: ReflectMetrics,
     ) -> str:
         lines = [
             f"# Nightly Review — {date}",

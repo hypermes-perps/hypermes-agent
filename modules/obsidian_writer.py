@@ -1,4 +1,4 @@
-"""Obsidian writer — syncs HOWL reports and journal entries to Obsidian vault.
+"""Obsidian writer — syncs REFLECT reports and journal entries to Obsidian vault.
 
 Writes trading reports as Obsidian-compatible markdown notes with YAML
 frontmatter for Dataview queries. Appends daily summaries to daily notes.
@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 
 class ObsidianWriter:
-    """Writes WOLF output as Obsidian notes with Dataview-friendly frontmatter."""
+    """Writes APEX output as Obsidian notes with Dataview-friendly frontmatter."""
 
     def __init__(self, vault_path: str = "~/obsidian-vault"):
         self.vault_path = Path(vault_path).expanduser()
@@ -21,7 +21,7 @@ class ObsidianWriter:
     def available(self) -> bool:
         return self.vault_path.exists()
 
-    def write_howl_report(
+    def write_reflect_report(
         self,
         briefing_md: str,
         date: str,
@@ -30,15 +30,15 @@ class ObsidianWriter:
         fdr: float = 0.0,
         round_trips: int = 0,
     ) -> Optional[Path]:
-        """Save HOWL report as Obsidian note with frontmatter."""
+        """Save REFLECT report as Obsidian note with frontmatter."""
         if not self.available:
             return None
 
-        howl_dir = self._project_dir / "howl"
-        howl_dir.mkdir(parents=True, exist_ok=True)
+        reflect_dir = self._project_dir / "reflect"
+        reflect_dir.mkdir(parents=True, exist_ok=True)
 
         frontmatter = self._frontmatter(
-            tags=["howl", "wolf", "trading-review"],
+            tags=["reflect", "apex", "trading-review"],
             extra={
                 "date": date,
                 "win_rate": round(win_rate, 1),
@@ -48,7 +48,7 @@ class ObsidianWriter:
             },
         )
 
-        path = howl_dir / f"{date}.md"
+        path = reflect_dir / f"{date}.md"
         path.write_text(frontmatter + "\n" + briefing_md)
         return path
 
@@ -69,7 +69,7 @@ class ObsidianWriter:
         recs = report_dict.get("config_recommendations", [])
 
         frontmatter = self._frontmatter(
-            tags=["judge", "wolf", "signal-quality"],
+            tags=["judge", "apex", "signal-quality"],
             extra={
                 "date": date,
                 "round_trips_evaluated": report_dict.get("round_trips_evaluated", 0),
@@ -119,7 +119,7 @@ class ObsidianWriter:
         roe = journal_entry_dict.get("roe_pct", 0)
 
         frontmatter = self._frontmatter(
-            tags=["trade", "wolf", instrument.lower()],
+            tags=["trade", "apex", instrument.lower()],
             extra={
                 "instrument": instrument,
                 "direction": journal_entry_dict.get("direction", ""),
@@ -147,7 +147,7 @@ class ObsidianWriter:
         return path
 
     def append_to_daily(self, date: str, summary: str) -> Optional[Path]:
-        """Append WOLF summary to the daily note."""
+        """Append APEX summary to the daily note."""
         if not self.available:
             return None
 
@@ -156,16 +156,16 @@ class ObsidianWriter:
 
         path = daily_dir / f"{date}.md"
 
-        wolf_section = f"\n\n## WOLF\n\n{summary}\n"
+        apex_section = f"\n\n## APEX\n\n{summary}\n"
 
         if path.exists():
             content = path.read_text()
-            if "## WOLF" in content:
-                # Replace existing WOLF section
+            if "## APEX" in content:
+                # Replace existing APEX section
                 import re
                 content = re.sub(
-                    r"## WOLF\n.*?(?=\n## |\Z)",
-                    f"## WOLF\n\n{summary}\n",
+                    r"## APEX\n.*?(?=\n## |\Z)",
+                    f"## APEX\n\n{summary}\n",
                     content,
                     flags=re.DOTALL,
                 )
@@ -173,9 +173,9 @@ class ObsidianWriter:
             else:
                 # Append new section
                 with open(path, "a") as f:
-                    f.write(wolf_section)
+                    f.write(apex_section)
         else:
-            path.write_text(f"# {date}\n{wolf_section}")
+            path.write_text(f"# {date}\n{apex_section}")
 
         return path
 

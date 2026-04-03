@@ -5,7 +5,7 @@
 <h3 align="center">Autonomous Trading Agent for Hyperliquid</h3>
 
 <p align="center">
-  14 strategies &bull; WOLF multi-slot orchestrator &bull; HOWL nightly review &bull; MCP server &bull; Agent Skills
+  14 strategies &bull; APEX multi-slot orchestrator &bull; REFLECT nightly review &bull; MCP server &bull; Agent Skills
 </p>
 
 <p align="center">
@@ -25,14 +25,14 @@
 </p>
 
 <p align="center">
-  <a href="https://railway.com/new/template?template=https://github.com/Nunchi-trade/agent-cli&envs=HL_PRIVATE_KEY,HL_TESTNET,RUN_MODE,WOLF_PRESET&HL_TESTNETDefault=true&RUN_MODEDefault=wolf&WOLF_PRESETDefault=default">
+  <a href="https://railway.com/new/template?template=https://github.com/Nunchi-trade/agent-cli&envs=HL_PRIVATE_KEY,HL_TESTNET,RUN_MODE,APEX_PRESET&HL_TESTNETDefault=true&RUN_MODEDefault=apex&APEX_PRESETDefault=default">
     <img src="https://railway.com/button.svg" alt="Deploy on Railway" height="36" />
   </a>
 </p>
 
 ---
 
-Ship market-making, momentum, arbitrage, and LLM-powered strategies on [Hyperliquid](https://hyperliquid.xyz) perps and [YEX](https://yex.nunchi.trade) yield markets. Full autonomous stack: DSL trailing stops, opportunity radar, emerging movers detector, WOLF orchestrator, HOWL performance review. Works as a standalone CLI, a [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skill, an [OpenClaw](https://agentskills.io) AgentSkill, or an MCP server.
+Ship market-making, momentum, arbitrage, and LLM-powered strategies on [Hyperliquid](https://hyperliquid.xyz) perps and [YEX](https://yex.nunchi.trade) yield markets. Full autonomous stack: Guard trailing stops, Radar opportunity screening, Pulse momentum detection, APEX orchestrator, REFLECT performance review. Works as a standalone CLI, a [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skill, an [OpenClaw](https://agentskills.io) AgentSkill, or an MCP server.
 
 ---
 
@@ -50,7 +50,7 @@ hl wallet auto --save-env        # Create wallet + save creds (no prompts)
 hl setup claim-usdyp             # Claim testnet USDyP
 hl builder approve               # Approve builder fee (one-time)
 hl run avellaneda_mm --mock --max-ticks 3   # Validate
-hl wolf run --mock --max-ticks 5            # Full pipeline test
+hl apex run --mock --max-ticks 5            # Full pipeline test
 ```
 
 ### Manual Setup
@@ -72,7 +72,7 @@ export HL_TESTNET=false
 
 hl builder approve --mainnet
 hl run engine_mm -i ETH-PERP --tick 10 --mainnet
-hl wolf run --mainnet
+hl apex run --mainnet
 ```
 
 ---
@@ -149,11 +149,11 @@ Built on the open [Agent Skills](https://agentskills.io) standard. Each skill is
 | Skill | What it does | Install |
 |-------|-------------|---------|
 | **[Onboard](#onboard)** | Step-by-step first-time setup — from zero to first trade. Decision trees, verification at each step, error recovery. | [`SKILL.md`](skills/onboard/SKILL.md) |
-| **[WOLF Strategy](#wolf--autonomous-multi-slot-strategy)** | Fully autonomous 2-3 slot trading. Composes Radar + Movers + DSL. Proven on testnet: signal detection, entry, trailing stop, exit. | [`SKILL.md`](skills/wolf/SKILL.md) |
-| **[Opportunity Radar](#radar--opportunity-radar)** | 4-stage funnel screening all HL perps. Scores 0-400 across market structure, technicals, funding, and BTC macro. | [`SKILL.md`](skills/radar/SKILL.md) |
-| **[Emerging Movers](#movers--emerging-movers-detector)** | Detects sudden capital inflow via OI delta, volume surge, funding flips. IMMEDIATE signals at 100 confidence. | [`SKILL.md`](skills/movers/SKILL.md) |
-| **[DSL (Dynamic Stop Loss)](#dsl--dynamic-stop-loss)** | 2-phase trailing stop with tiered profit-locking. ROE-based triggers that auto-account for leverage. | [`SKILL.md`](skills/dsl/SKILL.md) |
-| **[HOWL](#howl--performance-review)** | Nightly self-improvement loop. Analyzes every trade, finds patterns, generates actionable recommendations. | [`SKILL.md`](skills/howl/SKILL.md) |
+| **[APEX Strategy](#apex--autonomous-multi-slot-strategy)** | Fully autonomous 2-3 slot trading. Composes Radar + Pulse + Guard. Proven on testnet: signal detection, entry, trailing stop, exit. | [`SKILL.md`](skills/apex/SKILL.md) |
+| **[Radar](#radar--opportunity-radar)** | 4-stage funnel screening all HL perps. Scores 0-400 across market structure, technicals, funding, and BTC macro. | [`SKILL.md`](skills/radar/SKILL.md) |
+| **[Pulse](#pulse--emerging-pulse-detector)** | Detects sudden capital inflow via OI delta, volume surge, funding flips. IMMEDIATE signals at 100 confidence. | [`SKILL.md`](skills/pulse/SKILL.md) |
+| **[Guard (Dynamic Stop Loss)](#guard--dynamic-stop-loss)** | 2-phase trailing stop with tiered profit-locking. ROE-based triggers that auto-account for leverage. | [`SKILL.md`](skills/guard/SKILL.md) |
+| **[REFLECT](#reflect--performance-review)** | Nightly self-improvement loop. Analyzes every trade, finds patterns, generates actionable recommendations. | [`SKILL.md`](skills/reflect/SKILL.md) |
 
 ### Install a skill (agents)
 
@@ -161,11 +161,11 @@ Grab the raw URL and go:
 
 ```
 https://raw.githubusercontent.com/Nunchi-trade/agent-cli/main/skills/onboard/SKILL.md
-https://raw.githubusercontent.com/Nunchi-trade/agent-cli/main/skills/wolf/SKILL.md
+https://raw.githubusercontent.com/Nunchi-trade/agent-cli/main/skills/apex/SKILL.md
 https://raw.githubusercontent.com/Nunchi-trade/agent-cli/main/skills/radar/SKILL.md
-https://raw.githubusercontent.com/Nunchi-trade/agent-cli/main/skills/movers/SKILL.md
-https://raw.githubusercontent.com/Nunchi-trade/agent-cli/main/skills/dsl/SKILL.md
-https://raw.githubusercontent.com/Nunchi-trade/agent-cli/main/skills/howl/SKILL.md
+https://raw.githubusercontent.com/Nunchi-trade/agent-cli/main/skills/pulse/SKILL.md
+https://raw.githubusercontent.com/Nunchi-trade/agent-cli/main/skills/guard/SKILL.md
+https://raw.githubusercontent.com/Nunchi-trade/agent-cli/main/skills/reflect/SKILL.md
 ```
 
 ### Install a skill (OpenClaw / ClawHub)
@@ -204,7 +204,7 @@ hl run avellaneda_mm --mock --max-ticks 3  # Step 6: Validate
 
 ---
 
-### DSL — Dynamic Stop Loss
+### Guard — Dynamic Stop Loss
 
 Trailing stop system with tiered profit-locking. Protects profits while letting winners run.
 
@@ -218,10 +218,10 @@ Trailing stop system with tiered profit-locking. Protects profits while letting 
 | `tight` | 5% | 4 tiers (10-75% ROE) | Yes (8% ROE, 1h) |
 
 ```bash
-hl dsl run -i ETH-PERP --preset tight
+hl guard run -i ETH-PERP --preset tight
 ```
 
-**[Download SKILL.md](skills/dsl/SKILL.md)**
+**[Download SKILL.md](skills/guard/SKILL.md)**
 
 ---
 
@@ -245,7 +245,7 @@ hl radar run --mock     # Continuous (every 15 min)
 
 ---
 
-### Movers — Emerging Movers Detector
+### Pulse — Emerging Momentum Detector
 
 Detects assets with sudden capital inflow using OI, volume, funding, and price signals. Runs every 60 seconds.
 
@@ -257,20 +257,20 @@ Detects assets with sudden capital inflow using OI, volume, funding, and price s
 | `FUNDING_FLIP` | Funding rate reverses or accelerates 50%+ | 50 |
 
 ```bash
-hl movers once --mock     # Single scan
-hl movers run --mock      # Continuous (every 60s)
+hl pulse once --mock      # Single scan
+hl pulse run --mock       # Continuous (every 60s)
 ```
 
-**[Download SKILL.md](skills/movers/SKILL.md)**
+**[Download SKILL.md](skills/pulse/SKILL.md)**
 
 ---
 
-### WOLF — Autonomous Multi-Slot Strategy
+### APEX — Autonomous Multi-Slot Strategy
 
-The top-level orchestrator. Composes Radar + Movers + DSL into a single autonomous strategy managing 2-3 concurrent positions.
+The top-level orchestrator. Composes Radar + Pulse + Guard into a single autonomous strategy managing 2-3 concurrent positions.
 
 **Tick schedule** (60s base):
-- Every tick: Fetch prices, update ROEs, check DSL, run movers, evaluate entry/exit
+- Every tick: Fetch prices, update ROEs, check Guard, run Pulse, evaluate entry/exit
 - Every 5 ticks: Watchdog health check
 - Every 15 ticks: Run opportunity radar
 
@@ -291,16 +291,16 @@ The top-level orchestrator. Composes Radar + Movers + DSL into a single autonomo
 | `aggressive` | 3 | 15x | 150 | $1,000 |
 
 ```bash
-hl wolf run --mock --max-ticks 10          # Mock test
-hl wolf run                                 # Live testnet
-hl wolf run --preset conservative --mainnet # Live mainnet
+hl apex run --mock --max-ticks 10          # Mock test
+hl apex run                                 # Live testnet
+hl apex run --preset conservative --mainnet # Live mainnet
 ```
 
-**[Download SKILL.md](skills/wolf/SKILL.md)**
+**[Download SKILL.md](skills/apex/SKILL.md)**
 
 ---
 
-### HOWL — Performance Review
+### REFLECT — Performance Review
 
 Nightly self-improvement loop. Reads trade history, computes metrics, detects patterns, generates actionable recommendations.
 
@@ -313,16 +313,16 @@ Nightly self-improvement loop. Reads trade history, computes metrics, detects pa
 | Monster Dependency | % of net PnL from best single trade |
 
 ```bash
-hl howl run --since 2026-03-01
-hl howl report
-hl howl history -n 10
+hl reflect run --since 2026-03-01
+hl reflect report
+hl reflect history -n 10
 ```
 
-**[Download SKILL.md](skills/howl/SKILL.md)**
+**[Download SKILL.md](skills/reflect/SKILL.md)**
 
-### HOWL Self-Improvement Loop
+### REFLECT Self-Improvement Loop
 
-When running inside WOLF, HOWL executes automatically every 240 ticks (~4 hours) and at a configurable UTC hour (default 04:00). It reads the trade log, computes performance metrics, and **auto-adjusts WOLF parameters** based on findings:
+When running inside APEX, REFLECT executes automatically every 240 ticks (~4 hours) and at a configurable UTC hour (default 04:00). It reads the trade log, computes performance metrics, and **auto-adjusts APEX parameters** based on findings:
 
 | Finding | Automatic Adjustment |
 |---------|---------------------|
@@ -333,11 +333,11 @@ When running inside WOLF, HOWL executes automatically every 240 ticks (~4 hours)
 | Fees exceed gross PnL | **Emergency mode**: disable auto-entries, raise all thresholds |
 | Profitable + healthy | Slightly relax thresholds toward defaults |
 
-All adjustments have guardrail bounds — parameters can't swing wildly. Disable with `howl_auto_adjust: false` in WOLF config.
+All adjustments have guardrail bounds — parameters can't swing wildly. Disable with `reflect_auto_adjust: false` in APEX config.
 
-**Scheduled tasks** (built into WOLF tick loop):
+**Scheduled tasks** (built into APEX tick loop):
 - **Daily PnL reset** at UTC midnight — clears daily loss tracking
-- **HOWL comprehensive report** at UTC 04:00 — full performance review with markdown report saved to `data/wolf/howl/`
+- **REFLECT comprehensive report** at UTC 04:00 — full performance review with markdown report saved to `data/apex/reflect/`
 
 ---
 
@@ -353,11 +353,11 @@ hl strategies                     # List all strategies
 hl skills list                    # Discover installed skills
 
 # Autonomous stack
-hl wolf run [options]             # WOLF multi-slot orchestrator
+hl apex run [options]             # APEX multi-slot orchestrator
 hl radar run [options]            # Opportunity radar
-hl movers run [options]           # Emerging movers detector
-hl dsl run -i ETH-PERP [options] # DSL trailing stop
-hl howl run [--since DATE]        # Performance review
+hl pulse run [options]            # Pulse momentum detector
+hl guard run -i ETH-PERP [options] # Guard trailing stop
+hl reflect run [--since DATE]        # Performance review
 
 # Infrastructure
 hl builder approve [--mainnet]    # Approve builder fee
@@ -379,7 +379,7 @@ hl mcp serve                      # stdio transport (default)
 hl mcp serve --transport sse      # SSE transport
 ```
 
-**16 tools exposed:** `account`, `status`, `trade`, `run_strategy`, `strategies`, `radar_run`, `wolf_status`, `wolf_run`, `howl_run`, `setup_check`, `builder_status`, `wallet_list`, `wallet_auto`, `agent_memory`, `trade_journal`, `judge_report`
+**16 tools exposed:** `account`, `status`, `trade`, `run_strategy`, `strategies`, `radar_run`, `apex_status`, `apex_run`, `reflect_run`, `setup_check`, `builder_status`, `wallet_list`, `wallet_auto`, `agent_memory`, `trade_journal`, `judge_report`
 
 Fast tools (strategies, builder, wallet, setup, memory, journal, judge) call Python directly — zero subprocess overhead.
 
@@ -393,23 +393,23 @@ Every deployed agent also exposes an HTTP REST API and SSE real-time feed for da
 
 ## Deploy on Railway
 
-Two deployment options: **headless** (WOLF runs strategies directly) or **OpenClaw agent** (conversational AI trading assistant with Telegram).
+Two deployment options: **headless** (APEX runs strategies directly) or **OpenClaw agent** (conversational AI trading assistant with Telegram).
 
-### Option A: Headless WOLF (Deterministic)
+### Option A: Headless APEX (Deterministic)
 
-One-click deploy to run WOLF autonomously. No AI model needed — pure deterministic strategy execution.
+One-click deploy to run APEX autonomously. No AI model needed — pure deterministic strategy execution.
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https://github.com/Nunchi-trade/agent-cli&envs=HL_PRIVATE_KEY,HL_TESTNET,RUN_MODE,WOLF_PRESET&HL_TESTNETDefault=true&RUN_MODEDefault=wolf&WOLF_PRESETDefault=default)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https://github.com/Nunchi-trade/agent-cli&envs=HL_PRIVATE_KEY,HL_TESTNET,RUN_MODE,APEX_PRESET&HL_TESTNETDefault=true&RUN_MODEDefault=apex&APEX_PRESETDefault=default)
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `HL_PRIVATE_KEY` | Yes | — | Your Hyperliquid private key |
 | `HL_TESTNET` | No | `true` | `true` for testnet, `false` for mainnet |
-| `RUN_MODE` | No | `wolf` | `wolf`, `strategy`, or `mcp` |
-| `WOLF_PRESET` | No | `default` | `conservative`, `default`, or `aggressive` |
+| `RUN_MODE` | No | `apex` | `apex`, `wolf` (alias), `strategy`, or `mcp` |
+| `APEX_PRESET` | No | `default` | `conservative`, `default`, or `aggressive` |
 
 **Run modes:**
-- **wolf** (default) — WOLF multi-slot orchestrator with autonomous entry, exit, DSL trailing stops, and HOWL self-improvement loop
+- **apex** (default) — APEX multi-slot orchestrator with autonomous entry, exit, Guard trailing stops, and REFLECT self-improvement loop
 - **strategy** — Single strategy loop (set `STRATEGY=engine_mm`, `avellaneda_mm`, etc.)
 - **mcp** — MCP server for AI agent integration (SSE transport)
 
@@ -434,16 +434,16 @@ One-click deploy of a full OpenClaw agent that uses our CLI as the tool backend.
 - Our 13 MCP trading tools as the agent's primary capabilities
 - Persistent state across redeploys via `/data` volume
 - Auto-onboard: bot sends "Agent ready" to Telegram on first deploy
-- HOWL self-improvement: the agent analyzes its own trades and adjusts strategy parameters
+- REFLECT self-improvement: the agent analyzes its own trades and adjusts strategy parameters
 
 **How it works:**
 1. Deploy sets up OpenClaw + our `hl mcp serve` as the tool provider
 2. Bot auto-configures Telegram and sends you a ready message
-3. Tell it "start trading" → it runs WOLF with autonomous entry, exit, and risk management
-4. Ask "how did we do?" → it runs HOWL and reports performance metrics
+3. Tell it "start trading" → it runs APEX with autonomous entry, exit, and risk management
+4. Ask "how did we do?" → it runs REFLECT and reports performance metrics
 5. The agent reads workspace files (AGENTS.md, SOUL.md) that define its trading behavior
 
-Both options persist state via Railway volume at `/data` — WOLF state, HOWL reports, radar history, and agent memory survive redeploys.
+Both options persist state via Railway volume at `/data` — APEX state, REFLECT reports, Radar history, and agent memory survive redeploys.
 
 ---
 
@@ -469,7 +469,7 @@ hl run engine_mm -i BTCSWP-USDYP --tick 10
 
 ```
 cli/           CLI commands and trading engine
-  commands/    Subcommand modules (run, wolf, radar, movers, dsl, howl, house, ...)
+  commands/    Subcommand modules (run, apex, radar, pulse, guard, reflect, house, ...)
   mcp_server.py  MCP server (16 tools via FastMCP)
   hl_adapter.py  Direct HL API adapter (live + mock)
   builder_fee.py Builder fee config (HL native BuilderInfo)
@@ -477,18 +477,18 @@ cli/           CLI commands and trading engine
   strategy_registry.py  Strategy + YEX market definitions
 strategies/    14 trading strategy implementations
 modules/       Pure logic modules (zero I/O)
-  wolf_engine.py     WOLF decision engine
+  apex_engine.py     APEX decision engine
   radar_engine.py    Opportunity radar
-  movers_engine.py   Emerging movers detector
-  trailing_stop.py   DSL trailing stop
-  howl_engine.py     Performance analysis
+  pulse_engine.py    Pulse momentum detector
+  trailing_stop.py   Guard trailing stop
+  reflect_engine.py     Performance analysis
 skills/        Agent Skills (SKILL.md + runners)
   onboard/     First-time setup guide
-  wolf/        WOLF orchestrator
+  apex/        APEX orchestrator
   radar/       Opportunity radar
-  movers/      Emerging movers
-  dsl/         Dynamic stop loss
-  howl/        Performance review
+  pulse/       Pulse momentum detector
+  guard/       Dynamic stop loss
+  reflect/        Performance review
 sdk/           Strategy base class and model registry
 parent/        HL API proxy, position tracking, risk management
 tests/         Test suite (263 tests)
