@@ -1,10 +1,12 @@
 """Risk management — House Liquidity Risk Framework enforcement.
 
 Deterministic policy limits: position caps, daily drawdown, circuit breakers,
-reduce-only mode. No ML-driven decisions (per KorAI spec).
+reduce-only mode, and graduated Risk Guardian gate machine.
+No ML-driven decisions (per KorAI spec).
 """
 from __future__ import annotations
 
+import enum
 import logging
 import time
 from dataclasses import dataclass, field
@@ -15,6 +17,18 @@ from parent.position_tracker import PositionTracker
 
 log = logging.getLogger("risk_manager")
 ZERO = Decimal("0")
+
+
+class RiskGate(enum.Enum):
+    """3-state gate machine for graduated risk control.
+
+    OPEN      — Normal trading.
+    COOLDOWN  — Exits allowed, new entries blocked.
+    CLOSED    — All trading halted. Exchange SLs remain.
+    """
+    OPEN = "OPEN"
+    COOLDOWN = "COOLDOWN"
+    CLOSED = "CLOSED"
 
 
 @dataclass
@@ -83,6 +97,10 @@ class RiskState:
     reduce_only: bool = False
     safe_mode_reason: str = ""
     rounds_in_safe_mode: int = 0
+    # Risk Guardian gate machine
+    risk_gate: RiskGate = RiskGate.OPEN
+    consecutive_losses: int = 0
+    cooldown_entered_ts: int = 0
     # Price history for circuit breaker detection
     price_history: Dict[str, List[Tuple[int, str]]] = field(default_factory=dict)
 
@@ -96,10 +114,15 @@ class RiskState:
             "reduce_only": self.reduce_only,
             "safe_mode_reason": self.safe_mode_reason,
             "rounds_in_safe_mode": self.rounds_in_safe_mode,
+            "risk_gate": self.risk_gate.value,
+            "consecutive_losses": self.consecutive_losses,
+            "cooldown_entered_ts": self.cooldown_entered_ts,
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RiskState":
+        gate_val = data.get("risk_gate", "OPEN")
+        risk_gate = RiskGate(gate_val) if isinstance(gate_val, str) else RiskGate.OPEN
         return cls(
             daily_pnl=Decimal(data.get("daily_pnl", "0")),
             daily_high_water=Decimal(data.get("daily_high_water", "0")),
@@ -109,6 +132,9 @@ class RiskState:
             reduce_only=data.get("reduce_only", False),
             safe_mode_reason=data.get("safe_mode_reason", ""),
             rounds_in_safe_mode=data.get("rounds_in_safe_mode", 0),
+            risk_gate=risk_gate,
+            consecutive_losses=data.get("consecutive_losses", 0),
+            cooldown_entered_ts=data.get("cooldown_entered_ts", 0),
         )
 
 
@@ -235,6 +261,93 @@ class RiskManager:
 
             valid.append(order)
         return valid
+
+    # ── Risk Guardian Gate Machine ──────────────────────────────────
+
+    def _enter_cooldown(self, now_ms: int, reason: str) -> None:
+        """Transition to COOLDOWN state."""
+        self.state.risk_gate = RiskGate.COOLDOWN
+        self.state.cooldown_entered_ts = now_ms
+        log.warning("RISK GATE → COOLDOWN: %s", reason)
+
+    def _enter_closed(self, reason: str) -> None:
+        """Transition to CLOSED state."""
+        self.state.risk_gate = RiskGate.CLOSED
+        self.state.safe_mode = True
+        self.state.safe_mode_reason = reason
+        log.critical("RISK GATE → CLOSED: %s", reason)
+
+    def record_loss(self, now_ms: Optional[int] = None) -> None:
+        """Record a losing trade.  Increments consecutive loss counter and
+        may escalate the gate: OPEN → COOLDOWN → CLOSED."""
+        if now_ms is None:
+            now_ms = int(time.time() * 1000)
+
+        self.state.consecutive_losses += 1
+        threshold = getattr(self, "_cooldown_trigger_losses", 2)
+
+        if self.state.risk_gate == RiskGate.OPEN:
+            if self.state.consecutive_losses >= threshold:
+                self._enter_cooldown(now_ms, f"{self.state.consecutive_losses} consecutive losses")
+        elif self.state.risk_gate == RiskGate.COOLDOWN:
+            # Already in cooldown and another trigger → escalate to CLOSED
+            self._enter_closed("loss_during_cooldown")
+
+    def record_win(self) -> None:
+        """Record a winning trade.  Resets the consecutive loss counter."""
+        self.state.consecutive_losses = 0
+
+    def check_drawdown(self, current_drawdown: float, limit: float) -> None:
+        """If drawdown >= cooldown_drawdown_pct% of limit → COOLDOWN.
+        Called externally or from post_fill_update."""
+        pct = getattr(self, "_cooldown_drawdown_pct", 50.0)
+        if limit > 0 and current_drawdown >= limit * pct / 100.0:
+            if self.state.risk_gate == RiskGate.OPEN:
+                now_ms = int(time.time() * 1000)
+                self._enter_cooldown(now_ms, f"drawdown {current_drawdown:.2f} >= {pct}% of limit {limit:.2f}")
+            elif self.state.risk_gate == RiskGate.COOLDOWN:
+                self._enter_closed("drawdown_during_cooldown")
+
+    def check_daily_loss(self, daily_loss: float, limit: float) -> None:
+        """If daily loss exceeds limit → CLOSED."""
+        if limit > 0 and daily_loss >= limit:
+            if self.state.risk_gate != RiskGate.CLOSED:
+                self._enter_closed(f"daily_loss {daily_loss:.2f} >= limit {limit:.2f}")
+
+    def check_auto_expiry(self, now_ms: Optional[int] = None) -> None:
+        """If COOLDOWN and duration elapsed → back to OPEN."""
+        if self.state.risk_gate != RiskGate.COOLDOWN:
+            return
+        if now_ms is None:
+            now_ms = int(time.time() * 1000)
+        duration = getattr(self, "_cooldown_duration_ms", 1_800_000)
+        if now_ms - self.state.cooldown_entered_ts >= duration:
+            self.state.risk_gate = RiskGate.OPEN
+            self.state.consecutive_losses = 0
+            log.info("RISK GATE → OPEN: cooldown auto-expired")
+
+    def daily_reset(self) -> None:
+        """Reset gate to OPEN and clear counters (called at day boundary)."""
+        self.state.risk_gate = RiskGate.OPEN
+        self.state.consecutive_losses = 0
+        self.state.cooldown_entered_ts = 0
+        log.info("RISK GATE → OPEN: daily reset")
+
+    def can_open_position(self) -> bool:
+        """True only if gate is OPEN — new entries allowed."""
+        return self.state.risk_gate == RiskGate.OPEN
+
+    def can_trade(self) -> bool:
+        """True if OPEN or COOLDOWN (exits still allowed in COOLDOWN)."""
+        return self.state.risk_gate in (RiskGate.OPEN, RiskGate.COOLDOWN)
+
+    def configure_gate(self, *, cooldown_duration_ms: int = 1_800_000,
+                       cooldown_trigger_losses: int = 2,
+                       cooldown_drawdown_pct: float = 50.0) -> None:
+        """Apply gate configuration (typically from ApexConfig)."""
+        self._cooldown_duration_ms = cooldown_duration_ms
+        self._cooldown_trigger_losses = cooldown_trigger_losses
+        self._cooldown_drawdown_pct = cooldown_drawdown_pct
 
     def clear_safe_mode(self) -> None:
         """Manually clear safe mode (e.g., operator override)."""

@@ -20,6 +20,7 @@ class PulseSignal:
     price_change_pct: float = 0.0
     details: Dict[str, Any] = field(default_factory=dict)
     is_erratic: bool = False
+    signal_tier: int = 0              # 0=unclassified, 1=FIRST_JUMP … 5=DEEP_CLIMBER
 
 
 @dataclass
