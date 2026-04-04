@@ -15,8 +15,19 @@ from modules.pulse_state import AssetSnapshot, PulseResult, PulseSignal
 class PulseEngine:
     """Stateless Pulse detection engine. Zero I/O."""
 
+    # Tier name → tier number mapping
+    TIER_MAP = {
+        "FIRST_JUMP": 1,
+        "CONTRIB_EXPLOSION": 2,
+        "IMMEDIATE_MOVER": 3,
+        "NEW_ENTRY_DEEP": 4,
+        "DEEP_CLIMBER": 5,
+    }
+
     def __init__(self, config: Optional[PulseConfig] = None):
         self.config = config or PulseConfig()
+        # Track which sectors already have a FIRST_JUMP winner per scan cycle
+        self._sector_first_jump: Dict[str, str] = {}  # sector → first asset
 
     def scan(
         self,
@@ -33,6 +44,9 @@ class PulseEngine:
         """
         start_ms = int(time.time() * 1000)
         cfg = self.config
+
+        # Reset per-scan sector tracking for FIRST_JUMP
+        self._sector_first_jump = {}
 
         # 1. Parse current market snapshots
         snapshots = self._parse_markets(all_markets, start_ms)
@@ -137,13 +151,20 @@ class PulseEngine:
         if is_erratic:
             confidence *= 0.5
 
+        # --- 5-tier entry classification ---
+        oi_delta_pct = oi_signal.get("delta_pct", 0) if oi_signal else 0
+        vol_ratio = vol_signal.get("surge_ratio", 0) if vol_signal else 0
+        signal_tier = self._classify_tier(
+            snap, oi_delta_pct, vol_ratio, scan_history,
+        )
+
         return PulseSignal(
             asset=snap.asset,
             signal_type=signal_type,
             direction=direction,
             confidence=round(confidence, 1),
-            oi_delta_pct=round(oi_signal.get("delta_pct", 0), 2) if oi_signal else 0,
-            volume_surge_ratio=round(vol_signal.get("surge_ratio", 0), 2) if vol_signal else 0,
+            oi_delta_pct=round(oi_delta_pct, 2),
+            volume_surge_ratio=round(vol_ratio, 2),
             funding_shift=round(funding_signal.get("shift", 0), 6) if funding_signal else 0,
             price_change_pct=round(breakout_signal.get("breakout_pct", 0), 2) if breakout_signal else 0,
             details={
@@ -156,6 +177,7 @@ class PulseEngine:
                 "volume_24h": snap.volume_24h,
             },
             is_erratic=is_erratic,
+            signal_tier=signal_tier,
         )
 
     def _detect_oi_delta(
@@ -317,6 +339,79 @@ class PulseEngine:
                 votes["SHORT"] += 1
 
         return "LONG" if votes["LONG"] >= votes["SHORT"] else "SHORT"
+
+    def _classify_tier(
+        self,
+        snap: AssetSnapshot,
+        oi_delta_pct: float,
+        vol_ratio: float,
+        scan_history: List[Dict],
+    ) -> int:
+        """Classify an asset into the 5-tier signal hierarchy.
+
+        Returns tier number (1-5), or 0 if no tier matches.
+        Highest matching tier wins (lowest number = highest priority).
+        """
+        cfg = self.config
+
+        # Tier 1: FIRST_JUMP — first asset in its sector to show OI+volume breakout
+        sector = cfg.sector_map.get(snap.asset, "")
+        if sector and oi_delta_pct >= cfg.oi_delta_breakout_pct and vol_ratio >= cfg.volume_surge_ratio:
+            if sector not in self._sector_first_jump:
+                self._sector_first_jump[sector] = snap.asset
+                return 1  # FIRST_JUMP
+
+        # Tier 2: CONTRIB_EXPLOSION — simultaneous extreme OI AND volume
+        if (oi_delta_pct >= cfg.contrib_explosion_oi_pct
+                and vol_ratio >= cfg.contrib_explosion_vol_mult):
+            return 2  # CONTRIB_EXPLOSION
+
+        # Tier 3: IMMEDIATE_MOVER — either extreme OI OR extreme volume
+        if (oi_delta_pct >= cfg.oi_delta_immediate_pct
+                or vol_ratio >= cfg.volume_surge_immediate):
+            return 3  # IMMEDIATE_MOVER
+
+        # Tier 4: NEW_ENTRY_DEEP — OI grows but volume is low (smart money accumulation)
+        if (oi_delta_pct >= cfg.new_entry_deep_oi_pct
+                and 0 < vol_ratio <= cfg.new_entry_deep_max_vol_mult):
+            return 4  # NEW_ENTRY_DEEP
+
+        # Tier 5: DEEP_CLIMBER — sustained OI climb over 3+ consecutive scan windows
+        if self._check_deep_climber(snap.asset, scan_history):
+            return 5  # DEEP_CLIMBER
+
+        return 0  # Unclassified
+
+    def _check_deep_climber(self, asset: str, scan_history: List[Dict]) -> bool:
+        """Check if asset has sustained OI climb over N consecutive windows."""
+        cfg = self.config
+        min_windows = cfg.deep_climber_min_windows
+        min_oi_pct = cfg.deep_climber_min_oi_pct
+
+        if len(scan_history) < min_windows:
+            return False
+
+        recent = scan_history[-min_windows:]
+        consecutive_climbs = 0
+
+        for i in range(1, len(recent)):
+            prev_oi = self._get_asset_oi(asset, recent[i - 1])
+            curr_oi = self._get_asset_oi(asset, recent[i])
+            if prev_oi and prev_oi > 0 and curr_oi:
+                pct_change = (curr_oi - prev_oi) / prev_oi * 100
+                if pct_change >= min_oi_pct:
+                    consecutive_climbs += 1
+                else:
+                    consecutive_climbs = 0
+
+        return consecutive_climbs >= min_windows - 1
+
+    def _get_asset_oi(self, asset: str, scan: Dict) -> Optional[float]:
+        """Extract OI for an asset from a historical scan dict."""
+        for snap in scan.get("snapshots", []):
+            if snap.get("asset") == asset:
+                return snap.get("open_interest", 0)
+        return None
 
     def _is_erratic(self, asset: str, scan_history: List[Dict]) -> bool:
         """Check if asset has erratic OI rank behavior (bouncing)."""

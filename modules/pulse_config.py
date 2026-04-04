@@ -38,7 +38,28 @@ class PulseConfig:
         "VOLUME_SURGE": 70.0,
         "OI_BREAKOUT": 60.0,
         "FUNDING_FLIP": 50.0,
+        # 5-tier taxonomy
+        "FIRST_JUMP": 100.0,
+        "CONTRIB_EXPLOSION": 95.0,
+        "NEW_ENTRY_DEEP": 65.0,
+        "DEEP_CLIMBER": 55.0,
     })
+
+    # --- Signal taxonomy (5-tier) thresholds ---
+    # Tier 2: CONTRIB_EXPLOSION — simultaneous extreme OI + volume
+    contrib_explosion_oi_pct: float = 15.0
+    contrib_explosion_vol_mult: float = 5.0
+
+    # Tier 4: NEW_ENTRY_DEEP — OI grows but volume stays low (limit-order accumulation)
+    new_entry_deep_oi_pct: float = 8.0
+    new_entry_deep_max_vol_mult: float = 1.5
+
+    # Tier 5: DEEP_CLIMBER — sustained OI climb over N scan windows
+    deep_climber_min_windows: int = 3
+    deep_climber_min_oi_pct: float = 5.0  # per window
+
+    # Sector mapping for FIRST_JUMP detection (instrument → sector)
+    sector_map: Dict[str, str] = field(default_factory=dict)
 
     # History
     scan_history_size: int = 30
