@@ -32,11 +32,13 @@ from modules.memory_engine import MemoryEngine
 from modules.memory_guard import MemoryGuard
 from modules.pulse_guard import PulseGuard
 from modules.radar_guard import RadarGuard
+from modules.strategy_guard import StrategyGuard
 from modules.apex_config import ApexConfig
 from modules.apex_engine import ApexAction, ApexEngine
 from modules.apex_state import ApexSlot, ApexState, ApexStateStore
 from execution.portfolio_risk import PortfolioRiskManager, PortfolioRiskConfig
 from modules.reconciliation import ReconciliationEngine
+from modules.wallet_manager import WalletManager
 from parent.store import JSONLStore
 
 log = logging.getLogger("apex_runner")
@@ -68,6 +70,19 @@ class ApexRunner:
         self.data_dir = data_dir
         self.builder = builder
 
+        # Wallet manager (single-wallet by default, multi-wallet via config)
+        if self.config.wallet_config:
+            self.wallet_manager = WalletManager.from_yaml_section(self.config.wallet_config)
+            log.info("Multi-wallet mode: %d wallets configured", len(self.wallet_manager.wallet_ids))
+        else:
+            self.wallet_manager = WalletManager.from_single(
+                budget=self.config.total_budget,
+                leverage=self.config.leverage,
+                guard_preset=self.config.guard_preset,
+                max_slots=self.config.max_slots,
+                daily_loss_limit=self.config.daily_loss_limit,
+            )
+
         # Core engine (pure, zero I/O)
         self.engine = ApexEngine(self.config)
 
@@ -82,6 +97,23 @@ class ApexRunner:
         self.pulse_guard = PulseGuard()
         self.radar_guard = RadarGuard()
         self.radar_guard.history.path = f"{data_dir}/radar-history.json"
+
+        # Clear radar scan history on --fresh so stale signals don't persist
+        if not resume:
+            radar_hist = Path(f"{data_dir}/radar-history.json")
+            if radar_hist.exists():
+                radar_hist.unlink()
+                log.info("Cleared radar scan history (--fresh)")
+
+
+        # Directional strategy guard (opt-in via config)
+        self.strategy_guard: Optional[StrategyGuard] = None
+        if self.config.strategy_enabled and self.config.strategy_names:
+            self.strategy_guard = StrategyGuard(
+                strategy_names=self.config.strategy_names,
+                enabled=True,
+            )
+            log.info("Strategy guard active: %s", self.config.strategy_names)
 
         # Guard bridges per slot (created on entry, removed on exit)
         self.guard_bridges: Dict[int, GuardBridge] = {}
@@ -128,6 +160,15 @@ class ApexRunner:
             enabled=self.config.portfolio_risk_enabled,
         ))
 
+        # Directional strategy guard (optional)
+        self.strategy_guard = None
+        if self.config.strategy_enabled and self.config.strategy_names:
+            self.strategy_guard = StrategyGuard(
+                strategy_names=self.config.strategy_names,
+                enabled=True,
+            )
+            log.info("Strategy guard: %d strategies loaded", len(self.strategy_guard.strategies))
+
         # Smart money tracker (optional)
         self.smart_money_tracker = None
         if self.config.smart_money_enabled and self.config.smart_money_addresses:
@@ -161,12 +202,8 @@ class ApexRunner:
         """Verify account has funds before starting. Warns loudly if not."""
         try:
             account = self.hl.get_account_state()
-            # Check for balance in withdrawable or crossMarginSummary
-            balance = 0.0
-            if "crossMarginSummary" in account:
-                balance = float(account["crossMarginSummary"].get("accountValue", 0))
-            elif "marginSummary" in account:
-                balance = float(account["marginSummary"].get("accountValue", 0))
+            # get_account_state() returns processed dict with "account_value" key
+            balance = float(account.get("account_value", 0))
 
             if balance <= 0:
                 is_testnet = os.environ.get("HL_TESTNET", "true").lower() == "true"
@@ -302,6 +339,18 @@ class ApexRunner:
             except Exception as e:
                 log.warning("Smart money scan failed: %s", e)
 
+        # 3c. Run directional strategies
+        strategy_signals = []
+        if self.strategy_guard and tick % self.config.strategy_interval_ticks == 0:
+            try:
+                all_markets = self.hl.get_all_markets()
+                strategy_signals = self.strategy_guard.scan(
+                    all_markets=all_markets,
+                    slot_prices=slot_prices,
+                )
+            except Exception as e:
+                log.warning("Strategy guard scan failed: %s", e)
+
         # 4. Run radar (every N ticks)
         radar_opps = []
         if tick % self.config.radar_interval_ticks == 0:
@@ -328,6 +377,7 @@ class ApexRunner:
             slot_guard_results=slot_guard_results,
             now_ms=now_ms,
             smart_money_signals=smart_money_signals,
+            strategy_signals=strategy_signals,
         )
 
         # 7. Execute actions
@@ -420,6 +470,10 @@ class ApexRunner:
                             time.sleep(0.05)  # Rate limit: ~20 req/s to avoid HL 429s
                         except Exception:
                             pass
+
+            # Post-scan delay: if we fetched candles, pause to let rate limits reset
+            if asset_candles:
+                time.sleep(1.0)
 
             result = self.pulse_guard.scan(all_markets=all_markets, asset_candles=asset_candles)
             return [
@@ -620,8 +674,10 @@ class ApexRunner:
             size = (self.config.margin_per_slot * self.config.leverage) / mid
             side = "buy" if action.direction == "long" else "sell"
 
-            # Use configured entry order type (default ALO for maker rebates)
-            entry_tif = getattr(self.config, "entry_order_type", "Alo")
+            # Entry order type: directional strategies use IOC (need immediate fills
+            # on fast-moving assets), pulse/radar use configured default (ALO for rebates)
+            is_directional = action.source not in ("pulse_immediate", "pulse_signal", "radar")
+            entry_tif = "Ioc" if is_directional else getattr(self.config, "entry_order_type", "Alo")
             fill = self.hl.place_order(
                 instrument=action.instrument,
                 side=side,
@@ -644,6 +700,7 @@ class ApexRunner:
                 slot.last_signal_seen_ts = slot.entry_ts
                 slot.high_water_roe = 0.0
                 slot.current_roe = 0.0
+                slot.wallet_id = self.wallet_manager.get_default().wallet_id
 
                 # Create Guard bridge for this slot
                 self._create_guard_bridge(slot)

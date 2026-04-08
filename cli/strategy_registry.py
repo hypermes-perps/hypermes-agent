@@ -74,6 +74,26 @@ STRATEGY_REGISTRY: Dict[str, Dict[str, Any]] = {
         "description": "Basis arbitrage — trades implied basis from funding rate",
         "params": {"basis_threshold_bps": 5.0, "size": 1.0},
     },
+    "simplified_ensemble": {
+        "path": "strategies.simplified_ensemble:SimplifiedEnsembleStrategy",
+        "description": "6-signal ensemble (4/6 vote) — ported from auto-research exp52 (score 13.5)",
+        "params": {"size": 1.0},
+    },
+    "funding_momentum": {
+        "path": "strategies.funding_momentum:FundingMomentumStrategy",
+        "description": "Funding rate mean-reversion — trade extreme funding z-scores with EMA confirmation",
+        "params": {"size": 1.0},
+    },
+    "oi_divergence": {
+        "path": "strategies.oi_divergence:OIDivergenceStrategy",
+        "description": "OI divergence filter — enter on price/OI agreement, exit on divergence",
+        "params": {"size": 1.0},
+    },
+    "trend_follower": {
+        "path": "strategies.trend_follower:TrendFollowerStrategy",
+        "description": "EMA crossover + ADX trend strength filter — avoid chop, catch sustained moves",
+        "params": {"size": 1.0},
+    },
 }
 
 # YEX market definitions — Nunchi HIP-3 yield perpetuals
