@@ -432,7 +432,7 @@ class TradingEngine:
             risk_ok=ok,
             reduce_only=self.risk_manager.state.reduce_only,
         )
-        print(line, file=sys.stderr)
+        log.info(line)
 
     def _preflight_check(self) -> None:
         """Verify account has funds before starting. Warns loudly if not."""
@@ -502,7 +502,7 @@ class TradingEngine:
             self.tick_count, stats["total_placed"], stats["total_filled"],
             total_pnl, elapsed,
         )
-        print(summary, file=sys.stderr)
+        log.info(summary)
         self.state_db.close()
 
     def _persist_state(self):

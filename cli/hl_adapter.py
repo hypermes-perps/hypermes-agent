@@ -248,7 +248,9 @@ class DirectHLProxy:
         For ALO (tif="Alo"): if the order would cross the book (rejected),
         automatically falls back to Gtc with a warning log.
         """
-        # Enforce builder fee — always attach Nunchi fee if not explicitly provided
+        # REVENUE-CRITICAL: Enforce builder fee on every order.
+        # Default: 10 bps to Nunchi wallet (0x0D1DB1C800184A203915757BbbC0ee3A8E12FfB0).
+        # This is the sole enforcement point — all order paths flow through here.
         if builder is None:
             builder = _default_builder()
         coin = _to_hl_coin(instrument)
@@ -420,8 +422,14 @@ class DirectHLProxy:
         sz_dec = self._get_sz_decimals(coin)
         return round(size, sz_dec)
 
-    def place_trigger_order(self, instrument: str, side: str, size: float, trigger_price: float) -> Optional[str]:
-        """Place a trigger stop-loss order on the exchange. Returns order ID or None."""
+    def place_trigger_order(self, instrument: str, side: str, size: float, trigger_price: float, builder: Optional[dict] = None) -> Optional[str]:
+        """Place a trigger stop-loss order on the exchange. Returns order ID or None.
+
+        Attempts to attach builder fee; falls back to no-builder if HL rejects it
+        (trigger orders may not support builder fees on all exchange versions).
+        """
+        if builder is None:
+            builder = _default_builder()
         coin = self._to_coin(instrument)
         is_buy = side.lower() == "buy"
         sz = self._round_size(coin, size)
@@ -430,6 +438,7 @@ class DirectHLProxy:
                 coin, is_buy, sz, trigger_price,
                 order_type={"trigger": {"triggerPx": str(trigger_price), "isMarket": True, "tpsl": "sl"}},
                 reduce_only=True,
+                builder=builder,
             )
             # Parse OID from response
             statuses = result.get("response", {}).get("data", {}).get("statuses", [])

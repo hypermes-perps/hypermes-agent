@@ -55,6 +55,22 @@ class TestJSONLStore:
         store.append({"ok": True})
         assert store.read_all() == [{"ok": True}]
 
+    def test_corrupt_lines_skipped(self, tmp_dir):
+        """Corrupt JSON lines should be skipped, not crash read_all."""
+        path = f"{tmp_dir}/corrupt.jsonl"
+        with open(path, "w") as f:
+            f.write('{"a": 1}\n')
+            f.write('this is not json\n')
+            f.write('{"b": 2}\n')
+            f.write('{"broken: true\n')
+            f.write('{"c": 3}\n')
+        store = JSONLStore(path=path)
+        records = store.read_all()
+        assert len(records) == 3
+        assert records[0] == {"a": 1}
+        assert records[1] == {"b": 2}
+        assert records[2] == {"c": 3}
+
     def test_serializes_non_json_types(self, tmp_dir):
         """default=str in json.dumps handles Decimal, datetime, etc."""
         from decimal import Decimal

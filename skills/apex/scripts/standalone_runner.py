@@ -337,8 +337,29 @@ class ApexRunner:
         except Exception as e:
             log.debug("Account persist failed: %s", e)
 
+    def _persist_metrics(self, tick_latency_ms: float) -> None:
+        """Write operational metrics to disk for /metrics endpoint."""
+        try:
+            metrics = {
+                "tick_count": self.state.tick_count,
+                "tick_latency_ms": round(tick_latency_ms, 1),
+                "active_slots": len(self.state.active_slots()),
+                "daily_pnl": round(self.state.daily_pnl, 2),
+                "total_pnl": round(self.state.total_pnl, 2),
+                "total_trades": self.state.total_trades,
+                "safe_mode": getattr(self.state, "safe_mode", False),
+                "consecutive_timeouts": self._consecutive_timeouts,
+                "updated_at": int(time.time() * 1000),
+            }
+            metrics_path = Path(self.data_dir) / "metrics.json"
+            with open(metrics_path, "w") as f:
+                json.dump(metrics, f)
+        except Exception:
+            pass  # metrics are best-effort
+
     def _tick(self) -> List[ApexAction]:
         """Execute a single APEX tick cycle."""
+        t0 = time.monotonic()
         self._check_config_override()
         self.state.tick_count += 1
         tick = self.state.tick_count
@@ -410,6 +431,19 @@ class ApexRunner:
 
         # 8. Persist state
         self.state_store.save(self.state)
+
+        # 9. Tick latency tracking
+        elapsed_s = time.monotonic() - t0
+        elapsed_ms = elapsed_s * 1000
+        if elapsed_s > self.tick_interval * 0.8 and self.tick_interval > 0:
+            log.warning("Tick %d took %.1fs (%.0f%% of %.0fs interval)",
+                        tick, elapsed_s, (elapsed_s / self.tick_interval) * 100,
+                        self.tick_interval)
+        else:
+            log.debug("Tick %d completed in %.1fms", tick, elapsed_ms)
+
+        # 10. Persist metrics for /metrics endpoint
+        self._persist_metrics(elapsed_ms)
 
         self._print_status()
         return actions

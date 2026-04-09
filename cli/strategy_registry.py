@@ -36,7 +36,7 @@ STRATEGY_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
     "claude_agent": {
         "path": "strategies.claude_agent:ClaudeStrategy",
-        "description": "LLM trading agent — Gemini (default) or Claude",
+        "description": "LLM trading agent — Gemini (default), Claude, OpenAI, or ClawRouter (x402 USDC)",
         "params": {"model": "gemini-2.0-flash", "base_size": 0.5},
     },
     "engine_mm": {

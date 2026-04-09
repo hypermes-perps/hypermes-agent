@@ -20,6 +20,7 @@ const PROVIDER_MAP = {
   gemini: { key: "gemini-api-key", provider: "google" },
   google: { key: "gemini-api-key", provider: "google" },
   openrouter: { key: "apiKey", provider: "openrouter" },
+  blockrun: { key: "blockrun-wallet-key", provider: "blockrun" },
 };
 
 export async function bootstrap() {
@@ -76,6 +77,13 @@ function buildConfig() {
   const aiKey = process.env.AI_API_KEY || "";
   const providerInfo = PROVIDER_MAP[aiProvider] || PROVIDER_MAP.anthropic;
 
+  // For blockrun/ClawRouter: use wallet key instead of API key.
+  // x402 protocol — payment IS authentication, no API key needed.
+  const isBlockrun = aiProvider === "blockrun";
+  const credentialValue = isBlockrun
+    ? (process.env.BLOCKRUN_WALLET_KEY || "")
+    : aiKey;
+
   const config = {
     // Security (headless deployment)
     deviceAuth: false,
@@ -87,7 +95,7 @@ function buildConfig() {
 
     // AI provider
     provider: providerInfo.provider,
-    [providerInfo.key]: aiKey,
+    [providerInfo.key]: credentialValue,
 
     // MCP servers — our trading CLI is the primary tool provider
     mcpServers: {
@@ -98,6 +106,10 @@ function buildConfig() {
         env: {
           HL_PRIVATE_KEY: process.env.HL_PRIVATE_KEY || "",
           HL_TESTNET: process.env.HL_TESTNET || "true",
+          ...(isBlockrun ? {
+            BLOCKRUN_WALLET_KEY: process.env.BLOCKRUN_WALLET_KEY || "",
+            BLOCKRUN_PROXY_PORT: process.env.BLOCKRUN_PROXY_PORT || "8402",
+          } : {}),
         },
       },
     },

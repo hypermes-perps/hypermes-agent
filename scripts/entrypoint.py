@@ -17,8 +17,10 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from threading import Thread
 
+import logging
 import re
 
+log = logging.getLogger("entrypoint")
 START_TIME = time.time()
 CHILD_PROC: subprocess.Popen | None = None
 MAX_BODY_SIZE = 1_048_576  # 1MB max POST body
@@ -118,6 +120,19 @@ class HealthHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 body = json.dumps({"error": str(e)})
             self._cors_headers()
+            self._json_response(body)
+
+        elif self.path == "/metrics":
+            data_dir = os.environ.get("DATA_DIR", "/data")
+            metrics_path = Path(data_dir) / "apex" / "metrics.json"
+            try:
+                if metrics_path.exists():
+                    with open(metrics_path) as f:
+                        body = f.read()
+                else:
+                    body = json.dumps({"status": "no_metrics_yet"})
+            except Exception as e:
+                body = json.dumps({"error": str(e)})
             self._json_response(body)
 
         elif self.path == "/api/scanner":
@@ -292,7 +307,7 @@ def build_command() -> list[str]:
         return py + ["mcp", "serve", "--transport", "sse"]
 
     else:
-        print(f"Unknown RUN_MODE: {mode}. Use apex, wolf, strategy, or mcp.", file=sys.stderr)
+        log.error("Unknown RUN_MODE: %s. Use apex, wolf, strategy, or mcp.", mode)
         sys.exit(1)
 
 
@@ -300,7 +315,7 @@ def shutdown(signum, frame):
     """Forward shutdown signal to child process."""
     global CHILD_PROC
     if CHILD_PROC and CHILD_PROC.poll() is None:
-        print(f"[entrypoint] Received signal {signum}, forwarding to child (pid={CHILD_PROC.pid})")
+        log.info("Received signal %d, forwarding to child (pid=%d)", signum, CHILD_PROC.pid)
         CHILD_PROC.send_signal(signal.SIGTERM)
         try:
             CHILD_PROC.wait(timeout=15)
@@ -312,13 +327,19 @@ def shutdown(signum, frame):
 def main():
     global CHILD_PROC
 
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
     port = int(os.environ.get("PORT", "8080"))
 
     # Start health check server in background
     server = HTTPServer(("0.0.0.0", port), HealthHandler)
     health_thread = Thread(target=server.serve_forever, daemon=True)
     health_thread.start()
-    print(f"[entrypoint] Health server listening on :{port}")
+    log.info("Health server listening on :%d", port)
 
     # Register signal handlers
     signal.signal(signal.SIGTERM, shutdown)
@@ -336,7 +357,7 @@ def main():
                 [sys.executable, "-m", "cli.main", "builder", "approve", "--yes"] + mainnet_flag,
                 capture_output=True, timeout=30,
             )
-            print("[entrypoint] Builder fee approval sent")
+            log.info("Builder fee approval sent")
         except Exception:
             pass  # best-effort
 
@@ -344,13 +365,13 @@ def main():
     cmd = build_command()
     mode = os.environ.get("RUN_MODE", "apex")
     safe_cmd = _SECRET_RE.sub("0x[REDACTED]", ' '.join(cmd))
-    print(f"[entrypoint] Starting {mode} mode: {safe_cmd}")
+    log.info("Starting %s mode: %s", mode, safe_cmd)
 
     CHILD_PROC = subprocess.Popen(cmd)
 
     # Wait for child to finish (or be killed)
     rc = CHILD_PROC.wait()
-    print(f"[entrypoint] Process exited with code {rc}")
+    log.info("Process exited with code %d", rc)
     sys.exit(rc)
 
 
