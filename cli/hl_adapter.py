@@ -7,6 +7,7 @@ Also handles YEX (Nunchi HIP-3) market symbol mapping.
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
 from decimal import Decimal
@@ -17,6 +18,19 @@ from parent.hl_proxy import HLFill, HLProxy, MockHLProxy
 from cli.strategy_registry import YEX_MARKETS
 
 log = logging.getLogger("hl_adapter")
+
+# --- Constants ---
+SLIPPAGE_FACTOR = 1.005       # IOC slippage multiplier to cross the spread
+SIG_FIGS = 5                  # HL uses 5 significant figures for prices
+CIRCUIT_BREAKER_THRESHOLD = 5  # consecutive API failures before circuit opens
+MAX_RATE_LIMIT_RETRIES = 3
+BACKOFF_BASE_S = 2.0
+BACKOFF_MAX_S = 8.0
+
+
+class APICircuitBreakerOpen(Exception):
+    """Raised when the API circuit breaker is open due to persistent failures."""
+    pass
 
 
 def _default_builder() -> Optional[dict]:
@@ -48,6 +62,8 @@ class DirectHLProxy:
     def __init__(self, hl: HLProxy):
         self._hl = hl
         self._hl._ensure_client()
+        self._api_failure_count = 0
+        self._api_consecutive_429s = 0
 
     def set_leverage(self, leverage: int, coin: str = "ETH", is_cross: bool = True):
         """Set leverage for a coin via the underlying proxy."""
@@ -66,12 +82,41 @@ class DirectHLProxy:
         return self._hl._address
 
     def get_snapshot(self, instrument: str = "ETH-PERP"):
-        """Delegate to underlying proxy, handling YEX coin mapping."""
-        # For YEX markets we need to call l2_snapshot with the yex: prefix
-        yex = YEX_MARKETS.get(instrument)
-        if yex:
-            return self._get_yex_snapshot(instrument, yex["hl_coin"])
-        return self._hl.get_snapshot(instrument)
+        """Delegate to underlying proxy, handling YEX coin mapping.
+
+        Tracks consecutive API failures and raises APICircuitBreakerOpen
+        after CIRCUIT_BREAKER_THRESHOLD consecutive failures to force
+        the engine into safe mode rather than trading blind.
+        """
+        if self._api_failure_count >= CIRCUIT_BREAKER_THRESHOLD:
+            raise APICircuitBreakerOpen(
+                f"API circuit breaker open: {self._api_failure_count} consecutive failures"
+            )
+
+        try:
+            yex = YEX_MARKETS.get(instrument)
+            if yex:
+                snap = self._get_yex_snapshot(instrument, yex["hl_coin"])
+            else:
+                snap = self._hl.get_snapshot(instrument)
+
+            # Reset failure counter on success (non-zero price = real data)
+            if snap.mid_price > 0:
+                self._api_failure_count = 0
+            return snap
+        except APICircuitBreakerOpen:
+            raise
+        except Exception as e:
+            self._api_failure_count += 1
+            log.warning("API failure %d/%d for %s: %s",
+                        self._api_failure_count, CIRCUIT_BREAKER_THRESHOLD,
+                        instrument, e)
+            if self._api_failure_count >= CIRCUIT_BREAKER_THRESHOLD:
+                raise APICircuitBreakerOpen(
+                    f"API circuit breaker open after {self._api_failure_count} consecutive failures"
+                ) from e
+            from common.models import MarketSnapshot
+            return MarketSnapshot(instrument=instrument)
 
     def _get_yex_snapshot(self, instrument: str, hl_coin: str):
         """Fetch snapshot for a YEX market using its yex: prefixed coin."""
@@ -161,7 +206,7 @@ class DirectHLProxy:
                 return cached
 
         # Compute tick from significant figures (HL uses 5 sig figs for prices)
-        sig_figs = 5
+        sig_figs = SIG_FIGS
         if price <= 0:
             return 0.1
         import math
@@ -223,9 +268,9 @@ class DirectHLProxy:
             try:
                 snap = self._hl.get_snapshot(instrument)
                 if is_buy and snap.ask > 0:
-                    price = max(price, self._round_price(snap.ask * 1.005, coin))
+                    price = max(price, self._round_price(snap.ask * SLIPPAGE_FACTOR, coin))
                 elif not is_buy and snap.bid > 0:
-                    price = min(price, self._round_price(snap.bid * 0.995, coin))
+                    price = min(price, self._round_price(snap.bid * (2 - SLIPPAGE_FACTOR), coin))
             except Exception:
                 pass  # use original price if snapshot fails
 
@@ -252,19 +297,26 @@ class DirectHLProxy:
     ) -> Optional[HLFill]:
         """Low-level order send with retry on rate-limit. Returns HLFill or None."""
         try:
+            import random as _rand
             result = None
-            for attempt in range(3):
+            for attempt in range(MAX_RATE_LIMIT_RETRIES):
                 try:
                     result = self._exchange.order(
                         coin, is_buy, size, price,
                         {"limit": {"tif": tif}},
                         builder=builder,
                     )
+                    self._api_consecutive_429s = 0  # reset on success
                     break
                 except Exception as rate_err:
-                    if "429" in str(rate_err) and attempt < 2:
-                        delay = (attempt + 1) * 2  # 2s, 4s
-                        log.warning("Rate limited (429), retrying in %ds...", delay)
+                    if "429" in str(rate_err) and attempt < MAX_RATE_LIMIT_RETRIES - 1:
+                        # Exponential backoff with jitter, capped at BACKOFF_MAX_S
+                        base_delay = min(BACKOFF_BASE_S * (2 ** attempt), BACKOFF_MAX_S)
+                        jitter = _rand.uniform(0, base_delay * 0.25)
+                        delay = base_delay + jitter
+                        self._api_consecutive_429s += 1
+                        log.warning("Rate limited (429), attempt %d/%d, retrying in %.1fs...",
+                                    attempt + 1, MAX_RATE_LIMIT_RETRIES, delay)
                         time.sleep(delay)
                     else:
                         raise
@@ -312,8 +364,17 @@ class DirectHLProxy:
                 log.warning("Unknown status: %s", status)
                 return None
 
+        except (ConnectionError, OSError) as e:
+            log.error("Order network error: %s %s %s @ %s [%s] -- %s",
+                       side, size, instrument, price, tif, e)
+            return None
+        except json.JSONDecodeError as e:
+            log.error("Order response parse error: %s %s %s @ %s [%s] -- %s",
+                       side, size, instrument, price, tif, e)
+            return None
         except Exception as e:
-            log.error("Order failed: %s %s %s @ %s [%s] -- %s", side, size, instrument, price, tif, e)
+            log.critical("Order unexpected failure: %s %s %s @ %s [%s] -- %s",
+                          side, size, instrument, price, tif, e, exc_info=True)
             return None
 
     def cancel_order(self, instrument: str, oid: str) -> bool:

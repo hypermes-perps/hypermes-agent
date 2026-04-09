@@ -6,9 +6,11 @@ import os
 import signal
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from decimal import Decimal
 from typing import Any, Dict, Optional
 
+from cli.hl_adapter import APICircuitBreakerOpen
 from common.models import MarketSnapshot
 from parent.position_tracker import Position, PositionTracker
 from parent.risk_manager import RiskLimits, RiskManager
@@ -21,6 +23,8 @@ from execution.order_book import ManagedOrderBook
 
 log = logging.getLogger("engine")
 ZERO = Decimal("0")
+TICK_TIMEOUT_S = 30  # max seconds per tick before timeout
+MAX_CONSECUTIVE_TIMEOUTS = 3
 
 
 class TradingEngine:
@@ -57,6 +61,8 @@ class TradingEngine:
         self.tick_count = 0
         self.start_time_ms = 0
         self._running = False
+        self._consecutive_timeouts = 0
+        self._tick_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tick")
 
         # Optional Guard (composable mode — set via guard_config)
         self.guard_bridge = None   # type: ignore[assignment]
@@ -101,7 +107,21 @@ class TradingEngine:
                 break
 
             try:
-                self._tick()
+                future = self._tick_executor.submit(self._tick)
+                future.result(timeout=TICK_TIMEOUT_S)
+                self._consecutive_timeouts = 0
+            except FuturesTimeoutError:
+                self._consecutive_timeouts += 1
+                log.error("Tick %d timed out after %ds (%d/%d consecutive)",
+                          self.tick_count + 1, TICK_TIMEOUT_S,
+                          self._consecutive_timeouts, MAX_CONSECUTIVE_TIMEOUTS)
+                if self._consecutive_timeouts >= MAX_CONSECUTIVE_TIMEOUTS:
+                    log.critical("Engine entering safe mode: %d consecutive tick timeouts",
+                                 self._consecutive_timeouts)
+                    self.risk_manager.state.safe_mode = True
+            except APICircuitBreakerOpen as e:
+                log.critical("API circuit breaker open — entering safe mode: %s", e)
+                self.risk_manager.state.safe_mode = True
             except Exception as e:
                 log.error("Tick %d failed: %s", self.tick_count, e, exc_info=True)
 

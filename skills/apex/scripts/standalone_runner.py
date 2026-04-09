@@ -14,10 +14,16 @@ import logging
 import os
 import signal
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+try:
+    from cli.hl_adapter import APICircuitBreakerOpen
+except ImportError:
+    class APICircuitBreakerOpen(Exception):  # type: ignore[no-redef]
+        pass
 
 from modules.guard_config import GuardConfig, PRESETS as GUARD_PRESETS
 from modules.guard_bridge import GuardBridge
@@ -187,6 +193,10 @@ class ApexRunner:
         self._last_scheduled: Dict[str, str] = {}
 
         self._running = False
+        self._consecutive_timeouts = 0
+        self._tick_timeout_s = 30  # max seconds per tick
+        self._max_consecutive_timeouts = 3
+        self._tick_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="apex-tick")
 
     def _restore_guard_bridges(self) -> None:
         """Restore Guard bridges for active slots from persisted state."""
@@ -254,7 +264,21 @@ class ApexRunner:
                 break
 
             try:
-                self._tick()
+                future = self._tick_executor.submit(self._tick)
+                future.result(timeout=self._tick_timeout_s)
+                self._consecutive_timeouts = 0
+            except FuturesTimeoutError:
+                self._consecutive_timeouts += 1
+                log.error("APEX tick %d timed out after %ds (%d/%d consecutive)",
+                          self.state.tick_count, self._tick_timeout_s,
+                          self._consecutive_timeouts, self._max_consecutive_timeouts)
+                if self._consecutive_timeouts >= self._max_consecutive_timeouts:
+                    log.critical("APEX entering safe mode: %d consecutive tick timeouts",
+                                 self._consecutive_timeouts)
+                    self.state.safe_mode = True
+            except APICircuitBreakerOpen as e:
+                log.critical("API circuit breaker open — APEX entering safe mode: %s", e)
+                self.state.safe_mode = True
             except Exception as e:
                 log.error("Tick %d failed: %s", self.state.tick_count, e, exc_info=True)
 

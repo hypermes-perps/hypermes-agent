@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -45,6 +46,7 @@ class StateDB:
     def __init__(self, path: str = "data/state.db"):
         db_path = Path(path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute(
@@ -58,9 +60,10 @@ class StateDB:
 
     def get(self, key: str) -> Optional[Any]:
         """Read a JSON value by key. Returns None if not found."""
-        row = self._conn.execute(
-            "SELECT value FROM kv WHERE key = ?", (key,)
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT value FROM kv WHERE key = ?", (key,)
+            ).fetchone()
         if row is None:
             return None
         return json.loads(row[0])
@@ -68,22 +71,26 @@ class StateDB:
     def put(self, key: str, value: Any) -> None:
         """Write a JSON value by key (upsert)."""
         import time
-        self._conn.execute(
-            "INSERT INTO kv (key, value, updated_at) VALUES (?, ?, ?)"
-            " ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
-            (key, json.dumps(value, default=str), time.time()),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO kv (key, value, updated_at) VALUES (?, ?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                (key, json.dumps(value, default=str), time.time()),
+            )
+            self._conn.commit()
 
     def delete(self, key: str) -> None:
         """Delete a key."""
-        self._conn.execute("DELETE FROM kv WHERE key = ?", (key,))
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute("DELETE FROM kv WHERE key = ?", (key,))
+            self._conn.commit()
 
     def keys(self) -> List[str]:
         """Return all keys."""
-        rows = self._conn.execute("SELECT key FROM kv ORDER BY key").fetchall()
+        with self._lock:
+            rows = self._conn.execute("SELECT key FROM kv ORDER BY key").fetchall()
         return [r[0] for r in rows]
 
     def close(self) -> None:
-        self._conn.close()
+        with self._lock:
+            self._conn.close()
