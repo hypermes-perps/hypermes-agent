@@ -46,6 +46,7 @@ from execution.portfolio_risk import PortfolioRiskManager, PortfolioRiskConfig
 from modules.reconciliation import ReconciliationEngine
 from modules.wallet_manager import WalletManager
 from parent.store import JSONLStore
+from cli.telemetry import create_telemetry
 
 log = logging.getLogger("apex_runner")
 
@@ -192,6 +193,13 @@ class ApexRunner:
         # Scheduled task tracking (UTC hour -> last executed date string)
         self._last_scheduled: Dict[str, str] = {}
 
+        # Telemetry (fire-and-forget, never blocks trading)
+        try:
+            wallet_addr = self.hl.wallet.address if hasattr(self.hl, 'wallet') else os.environ.get("HL_WALLET_ADDRESS", "unknown")
+            self.telemetry = create_telemetry(wallet_address=wallet_addr, strategy_name="apex")
+        except Exception:
+            self.telemetry = None
+
         self._running = False
         self._consecutive_timeouts = 0
         self._tick_timeout_s = 30  # max seconds per tick
@@ -240,6 +248,15 @@ class ApexRunner:
         signal.signal(signal.SIGTERM, self._handle_shutdown)
 
         self._preflight_check()
+
+        # Register with telemetry service
+        if self.telemetry:
+            try:
+                self.telemetry.register()
+            except Exception:
+                pass  # telemetry should never break the runner
+
+        self._start_time = time.time()
 
         log.info("APEX started: slots=%d leverage=%.0fx budget=$%.0f tick=%ds",
                  self.config.max_slots, self.config.leverage,
@@ -444,6 +461,17 @@ class ApexRunner:
 
         # 10. Persist metrics for /metrics endpoint
         self._persist_metrics(elapsed_ms)
+
+        # 11. Telemetry heartbeat (every N ticks, fire-and-forget)
+        if self.telemetry and self.telemetry.should_heartbeat(tick):
+            try:
+                self.telemetry.heartbeat(
+                    tick_count=tick,
+                    uptime_s=time.time() - getattr(self, '_start_time', time.time()),
+                    active_positions=len(self.state.active_slots()),
+                )
+            except Exception:
+                pass
 
         self._print_status()
         return actions

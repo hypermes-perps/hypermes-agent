@@ -56,8 +56,17 @@ def patch_spot_meta_indexing():
                                "weiDecimals": 0, "index": len(tokens),
                                "tokenId": "0x0", "isCanonical": False})
 
-            kwargs["spot_meta"] = spot_meta
-            _orig_init(self, *args, **kwargs)
+            # spot_meta is the 4th positional param (index 3) in Info.__init__.
+            # It may already be in *args from the caller (e.g. Exchange.__init__),
+            # so we must replace it positionally to avoid "multiple values" TypeError.
+            args_list = list(args)
+            SPOT_META_POS = 3  # (base_url, skip_ws, meta, spot_meta, ...)
+            if len(args_list) > SPOT_META_POS:
+                args_list[SPOT_META_POS] = spot_meta
+                _orig_init(self, *args_list, **kwargs)
+            else:
+                kwargs["spot_meta"] = spot_meta
+                _orig_init(self, *args, **kwargs)
 
     info_mod.Info.__init__ = _patched_init
     log.debug("Applied spot_meta indexing patch to hyperliquid SDK")
