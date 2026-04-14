@@ -12,8 +12,8 @@ import signal
 import subprocess
 import sys
 import time
-from functools import partial
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from socketserver import ThreadingMixIn
 from pathlib import Path
 from threading import Thread
 
@@ -340,8 +340,11 @@ def main():
 
     port = int(os.environ.get("PORT", "8080"))
 
-    # Start health check server in background
-    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    # Start health check server in background (threaded to handle SSE + concurrent requests)
+    class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+        daemon_threads = True
+
+    server = ThreadedHTTPServer(("0.0.0.0", port), HealthHandler)
     health_thread = Thread(target=server.serve_forever, daemon=True)
     health_thread.start()
     log.info("Health server listening on :%d", port)
