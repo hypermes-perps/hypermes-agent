@@ -116,15 +116,7 @@ class ApexRunner:
                 radar_hist.unlink()
                 log.info("Cleared radar scan history (--fresh)")
 
-
-        # Directional strategy guard (opt-in via config)
         self.strategy_guard: Optional[StrategyGuard] = None
-        if self.config.strategy_enabled and self.config.strategy_names:
-            self.strategy_guard = StrategyGuard(
-                strategy_names=self.config.strategy_names,
-                enabled=True,
-            )
-            log.info("Strategy guard active: %s", self.config.strategy_names)
 
         # Guard bridges per slot (created on entry, removed on exit)
         self.guard_bridges: Dict[int, GuardBridge] = {}
@@ -171,14 +163,7 @@ class ApexRunner:
             enabled=self.config.portfolio_risk_enabled,
         ))
 
-        # Directional strategy guard (optional)
-        self.strategy_guard = None
-        if self.config.strategy_enabled and self.config.strategy_names:
-            self.strategy_guard = StrategyGuard(
-                strategy_names=self.config.strategy_names,
-                enabled=True,
-            )
-            log.info("Strategy guard: %d strategies loaded", len(self.strategy_guard.strategies))
+        self._init_strategy_guard()
 
         # Smart money tracker (optional)
         self.smart_money_tracker = None
@@ -209,6 +194,27 @@ class ApexRunner:
         self._tick_timeout_s = 30  # max seconds per tick
         self._max_consecutive_timeouts = 3
         self._tick_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="apex-tick")
+
+    def _init_strategy_guard(self) -> None:
+        """Initialize strategy guard based on config: auto-route for mapped markets, or legacy opt-in."""
+        from modules.market_strategy_map import has_strategy_mapping
+
+        if (self.config.strategy_enabled
+                and self.config.allowed_instruments
+                and has_strategy_mapping(self.config.allowed_instruments)):
+            self.strategy_guard = StrategyGuard(
+                target_markets=self.config.allowed_instruments,
+                enabled=True,
+            )
+            log.info("Strategy guard (auto-routed): markets=%s", self.config.allowed_instruments)
+        elif self.config.strategy_enabled and self.config.strategy_names:
+            self.strategy_guard = StrategyGuard(
+                strategy_names=self.config.strategy_names,
+                enabled=True,
+            )
+            log.info("Strategy guard (explicit): %d strategies loaded", len(self.strategy_guard.strategies))
+        else:
+            self.strategy_guard = None
 
     def _restore_guard_bridges(self) -> None:
         """Restore Guard bridges for active slots from persisted state."""
@@ -341,12 +347,13 @@ class ApexRunner:
             if "radar_score_threshold" in params:
                 self.radar_guard.config.score_threshold = params["radar_score_threshold"]
                 self.radar_guard.engine = type(self.radar_guard.engine)(self.radar_guard.config)
-            if override.get("markets"):
-                new_markets = override["markets"]
-                if new_markets != self.config.allowed_instruments:
-                    old = self.config.allowed_instruments
-                    self.config.allowed_instruments = new_markets
-                    changed.append(f"allowed_instruments: {old} -> {new_markets}")
+            new_markets = override.get("markets")
+            if new_markets is not None and new_markets != self.config.allowed_instruments:
+                old_markets = self.config.allowed_instruments
+                self.config.allowed_instruments = new_markets
+                changed.append(f"allowed_instruments: {old_markets} -> {new_markets}")
+            if "strategy_enabled" in params or new_markets is not None:
+                self._init_strategy_guard()
             if override.get("preset"):
                 self.state.preset = override["preset"]
             if changed:
@@ -383,9 +390,12 @@ class ApexRunner:
         return [merged_meta, merged_ctxs]
 
     def _get_all_mids(self) -> dict:
-        """Fetch mid prices including HIP-3 DEXs if allowed_instruments needs them."""
+        """Fetch mid prices including HIP-3 DEXs if any are needed."""
         mids = self.hl.get_all_mids()
-        for dex_id in get_hip3_dex_ids(self.config.allowed_instruments):
+        # Merge HIP-3 mids if allowed_instruments or active positions need them
+        active_instruments = [s.instrument for s in self.state.active_slots()]
+        all_instruments = list(self.config.allowed_instruments) + active_instruments
+        for dex_id in get_hip3_dex_ids(all_instruments):
             try:
                 mids.update(self.hl.get_dex_mids(dex_id))
             except Exception as e:
@@ -465,6 +475,7 @@ class ApexRunner:
                 strategy_signals = self.strategy_guard.scan(
                     all_markets=all_markets,
                     slot_prices=slot_prices,
+                    target_markets=self.config.allowed_instruments or None,
                 )
             except Exception as e:
                 log.warning("Strategy guard scan failed: %s", e)
@@ -955,14 +966,17 @@ class ApexRunner:
                 builder=self.builder,
             )
 
-            exit_price = float(fill.price) if fill else mid
+            if not fill:
+                log.warning("Exit fill failed for slot %d (%s) — position still open on-chain",
+                            slot.slot_id, action.instrument)
+                return
+
+            exit_price = float(fill.price)
             pnl = 0.0
             try:
                 if slot.entry_price > 0 and exit_price > 0:
-                    if slot.direction == "long":
-                        pnl = (exit_price - slot.entry_price) / slot.entry_price * slot.margin_allocated * self.config.leverage
-                    else:
-                        pnl = (slot.entry_price - exit_price) / slot.entry_price * slot.margin_allocated * self.config.leverage
+                    direction_sign = 1.0 if slot.direction == "long" else -1.0
+                    pnl = (exit_price - slot.entry_price) * slot.entry_size * direction_sign
             except Exception as e:
                 log.warning("PnL calculation failed for slot %d: %s (closing with pnl=0)", slot.slot_id, e)
 
@@ -970,8 +984,8 @@ class ApexRunner:
             self._log_trade(
                 tick=self.state.tick_count, instrument=action.instrument,
                 side=side, price=float(exit_price),
-                quantity=float(slot.entry_size), fee=float(getattr(fill, "fee", 0)) if fill else 0,
-                meta=action.reason,
+                quantity=float(fill.quantity), fee=float(getattr(fill, "fee", 0)),
+                pnl=pnl, meta=action.reason,
             )
             log.info("EXITED slot %d: %s %s @ %.4f PnL=$%.2f (%s)",
                      slot.slot_id, slot.direction, action.instrument,
@@ -1078,7 +1092,7 @@ class ApexRunner:
 
     def _log_trade(self, tick: int, instrument: str, side: str,
                    price: float, quantity: float, fee: float = 0,
-                   meta: str = "") -> None:
+                   pnl: float = 0.0, meta: str = "") -> None:
         """Append a trade record to the JSONL log."""
         self.trade_log.append({
             "tick": tick,
@@ -1089,6 +1103,7 @@ class ApexRunner:
             "quantity": str(quantity),
             "timestamp_ms": int(time.time() * 1000),
             "fee": str(fee),
+            "pnl": str(pnl),
             "strategy": "apex",
             "meta": meta,
         })

@@ -92,7 +92,7 @@ class DirectHLProxy:
         try:
             hl_coin = instrument_to_coin(instrument)
             if ":" in hl_coin:
-                snap = self._get_yex_snapshot(instrument, hl_coin)
+                snap = self._get_hip3_snapshot(instrument, hl_coin)
             else:
                 snap = self._hl.get_snapshot(instrument)
 
@@ -114,8 +114,8 @@ class DirectHLProxy:
             from common.models import MarketSnapshot
             return MarketSnapshot(instrument=instrument)
 
-    def _get_yex_snapshot(self, instrument: str, hl_coin: str):
-        """Fetch snapshot for a YEX market using its yex: prefixed coin."""
+    def _get_hip3_snapshot(self, instrument: str, hl_coin: str):
+        """Fetch snapshot for a HIP-3 DEX market via L2 book."""
         from common.models import MarketSnapshot
         try:
             book = self._info.l2_snapshot(hl_coin)
@@ -136,7 +136,7 @@ class DirectHLProxy:
                 timestamp_ms=int(time.time() * 1000),
             )
         except Exception as e:
-            log.error("Failed to get YEX snapshot for %s (%s): %s", instrument, hl_coin, e)
+            log.error("Failed to get HIP-3 snapshot for %s (%s): %s", instrument, hl_coin, e)
             return MarketSnapshot(instrument=instrument)
 
     def get_account_state(self) -> Dict:
@@ -418,7 +418,13 @@ class DirectHLProxy:
                 return fill
             elif "resting" in status:
                 oid = status["resting"].get("oid", "") if isinstance(status["resting"], dict) else ""
-                log.info("Resting [%s]: %s %s %s @ %s (oid=%s)", tif, side, size, instrument, price, oid)
+                log.info("Resting [%s]: %s %s %s @ %s (oid=%s) — cancelling",
+                         tif, side, size, instrument, price, oid)
+                if oid:
+                    try:
+                        self._exchange.cancel(coin, int(oid))
+                    except Exception:
+                        log.warning("Failed to cancel resting order %s for %s", oid, instrument)
                 return None
             elif "error" in status:
                 log.info("No fill [%s]: %s %s %s @ %s -- %s", tif, side, size, instrument, price, status["error"])
