@@ -25,13 +25,20 @@ def apex_run(
     budget: float = typer.Option(0, "--budget", help="Override total budget ($)"),
     slots: int = typer.Option(0, "--slots", help="Override max slots"),
     leverage: float = typer.Option(0, "--leverage", help="Override leverage"),
+    markets: Optional[str] = typer.Option(
+        None, "--markets", "-m",
+        help="Comma-separated list of allowed instruments (e.g. VXX-USDYP,US3M-USDYP). "
+             "Restricts pulse/radar scans and entries to only these markets. "
+             "Required when running in PR-3 dedicated-wallet mode where the agent "
+             "is funded on a HIP-3 dex (e.g. yex) and should not scan universal HL perps.",
+    ),
     data_dir: str = typer.Option("data/apex", "--data-dir"),
 ):
     """Start APEX autonomous multi-slot strategy."""
     _run_apex(tick=tick, preset=preset, config=config, mock=mock or dry_run,
               resume=resume, mainnet=mainnet, json_output=json_output,
               max_ticks=max_ticks, budget=budget, slots=slots,
-              leverage=leverage, data_dir=data_dir)
+              leverage=leverage, markets=markets, data_dir=data_dir)
 
 
 @apex_app.command("once")
@@ -179,7 +186,7 @@ def apex_presets():
 
 def _run_apex(tick, preset, config, mock, mainnet, json_output,
               max_ticks, budget, slots, leverage, data_dir, single=False,
-              resume=True):
+              resume=True, markets=None):
     project_root = str(Path(__file__).resolve().parent.parent.parent)
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
@@ -193,6 +200,11 @@ def _run_apex(tick, preset, config, mock, mainnet, json_output,
     else:
         cfg = ApexConfig()
 
+    # Stamp the preset name onto the config so the runner can use it to load
+    # matching pulse/radar sub-guard presets at boot.
+    if preset:
+        cfg.preset_name = preset
+
     # CLI overrides
     if budget > 0:
         cfg.total_budget = budget
@@ -202,6 +214,8 @@ def _run_apex(tick, preset, config, mock, mainnet, json_output,
         cfg.margin_per_slot = cfg.total_budget / max(slots, 1)
     if leverage > 0:
         cfg.leverage = leverage
+    if markets:
+        cfg.allowed_instruments = [m.strip() for m in markets.split(",") if m.strip()]
 
     from common.logging_config import configure_logging, log_startup_banner, resolve_obsidian_path
 

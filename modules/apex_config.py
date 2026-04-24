@@ -100,6 +100,11 @@ class ApexConfig:
     excluded_instruments: List[str] = field(default_factory=list)
     allowed_instruments: List[str] = field(default_factory=list)
 
+    # Preset name (optional). When set, the standalone runner uses this to
+    # look up matching pulse/radar presets in PULSE_PRESETS / RADAR_PRESETS
+    # at boot. Set automatically by `apex run --preset <name>` via _run_apex.
+    preset_name: str = ""
+
     def __post_init__(self):
         if self.margin_per_slot == 0.0:
             self.margin_per_slot = self.total_budget / max(self.max_slots, 1)
@@ -147,5 +152,25 @@ APEX_PRESETS: Dict[str, ApexConfig] = {
         radar_score_threshold=150,
         pulse_confidence_threshold=60.0,
         daily_loss_limit=1000.0,
+    ),
+    # Tuned for testnet competitions on the yex HIP-3 dex with 3 markets
+    # (VXX, US3M, BTCSWP). Much faster radar cycle, much lower entry
+    # threshold, and shorter min hold so the agent rotates frequently and
+    # produces visible PnL movement during the competition window.
+    # Pair with --markets VXX-USDYP,US3M-USDYP,BTCSWP-USDYP.
+    "competition": ApexConfig(
+        max_slots=3,
+        leverage=15.0,
+        radar_score_threshold=110,        # was 150 in aggressive
+        pulse_confidence_threshold=45.0,  # was 60 in aggressive
+        radar_interval_ticks=5,           # was 15 — scan 3x more often
+        min_hold_ms=600_000,              # 10 min instead of 45 — faster rotation
+        slot_cooldown_ms=60_000,          # 1 min instead of 5
+        daily_loss_limit=2000.0,
+        # Force IOC orders so entries cross the spread and fill immediately.
+        # The default ALO posts limit orders that almost never fill on the
+        # low-liquidity yex markets and the runner cancels them after one
+        # tick. IOC trades the maker rebate for guaranteed fills.
+        entry_order_type="Ioc",
     ),
 }

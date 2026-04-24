@@ -168,16 +168,35 @@ class DirectHLProxy:
             log.error("Failed to get account state: %s", e)
             return {}
 
-        # Merge HIP-3 DEX positions (e.g. YEX) so watchdog/reconciliation sees them.
+        # Merge HIP-3 DEX state (e.g. YEX). Two things to merge:
+        #   1. Asset positions (so watchdog/reconciliation can see open trades)
+        #   2. accountValue / margin / withdrawable (so preflight, budget
+        #      calculations, and any other code reading account_value can see
+        #      funds held inside the HIP-3 clearinghouse)
+        #
+        # Without merging the account value, agents in PR 3 mode (dedicated
+        # agent wallets, funded by treasury into yex) report
+        # "** NO FUNDS DETECTED **" at preflight even though they hold
+        # $1000 USDYP in yex, because the universal clearinghouse query
+        # returns $0.
         for dex_id in HIP3_DEXS:
             try:
                 dex_state = self._info.post("/info", {
                     "type": "clearinghouseState", "user": self._address, "dex": dex_id,
                 })
-                if dex_state and dex_state.get("assetPositions"):
+                if not dex_state:
+                    continue
+                if dex_state.get("assetPositions"):
                     result["positions"].extend(dex_state["assetPositions"])
+                dex_margin = dex_state.get("marginSummary", {}) or {}
+                try:
+                    result["account_value"] += float(dex_margin.get("accountValue", 0) or 0)
+                    result["total_margin"] += float(dex_margin.get("totalMarginUsed", 0) or 0)
+                    result["withdrawable"] += float(dex_state.get("withdrawable", 0) or 0)
+                except (TypeError, ValueError):
+                    pass
             except Exception as e:
-                log.warning("Failed to fetch %s positions: %s", dex_id, e)
+                log.warning("Failed to fetch %s state: %s", dex_id, e)
 
         # Fetch spot balances (separate endpoint).
         spot_balances = self._fetch_spot_balances()

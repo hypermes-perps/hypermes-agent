@@ -104,10 +104,39 @@ class ApexRunner:
         else:
             self.state = ApexState.new(self.config.max_slots)
 
-        # Sub-guards
-        self.pulse_guard = PulseGuard()
-        self.radar_guard = RadarGuard()
+        # Sub-guards. When the APEX config has a preset_name that maps to
+        # known pulse/radar presets (e.g. "competition"), construct the
+        # guards with the matching preset rather than the default config.
+        # This is the only way to lower pulse/radar thresholds at boot —
+        # they ignore APEX-level CLI flags otherwise.
+        from modules.pulse_config import PULSE_PRESETS
+        from modules.radar_config import RADAR_PRESETS
+        preset_name = (getattr(self.config, "preset_name", "") or "").lower()
+        pulse_cfg = PULSE_PRESETS.get(preset_name)
+        radar_cfg = RADAR_PRESETS.get(preset_name)
+        self.pulse_guard = PulseGuard(config=pulse_cfg) if pulse_cfg else PulseGuard()
+        self.radar_guard = RadarGuard(config=radar_cfg) if radar_cfg else RadarGuard()
         self.radar_guard.history.path = f"{data_dir}/radar-history.json"
+        if pulse_cfg or radar_cfg:
+            log.info(
+                "Sub-guards loaded with preset %r: pulse=%s radar=%s",
+                preset_name, "preset" if pulse_cfg else "default",
+                "preset" if radar_cfg else "default",
+            )
+
+        # Sync the APEX config's radar_score_threshold to the radar guard at
+        # boot. Without this, the radar guard always uses RadarConfig's default
+        # score_threshold (150) regardless of APEX preset, and the only way to
+        # change it was via a runtime config-override JSON file. The
+        # `competition` preset relies on this sync to lower the threshold to
+        # 110 at startup.
+        try:
+            self.radar_guard.config.score_threshold = self.config.radar_score_threshold
+            self.radar_guard.engine = type(self.radar_guard.engine)(self.radar_guard.config)
+            log.info("Radar guard score_threshold synced to APEX preset: %d",
+                     self.config.radar_score_threshold)
+        except Exception as e:
+            log.warning("Failed to sync radar score_threshold at boot: %s", e)
 
         # Clear radar scan history on --fresh so stale signals don't persist
         if not resume:
@@ -195,6 +224,23 @@ class ApexRunner:
         self._max_consecutive_timeouts = 3
         self._tick_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="apex-tick")
 
+        # Health/error state surfaced via /metrics for the dashboard FE.
+        # The runner used to log "** NO FUNDS DETECTED **" loudly to its own
+        # logs but never propagate that state upward, so the FE rendered the
+        # agent as "RUNNING" while it was actually unable to place any orders.
+        # These two fields make degraded states visible to anything reading
+        # the metrics endpoint.
+        #
+        # error_state: short stable identifier ("unfunded", "preflight_failed",
+        #   "order_rejected", "tick_timeout", None) — UI maps to a banner.
+        # can_trade: false when we know with high confidence the agent cannot
+        #   submit a successful order right now (e.g. account_value is 0).
+        #   true when preflight passed; defaults to true so we don't hide
+        #   functioning agents on transient errors.
+        self._error_state: Optional[str] = None
+        self._error_detail: Optional[str] = None
+        self._can_trade: bool = True
+
     def _init_strategy_guard(self) -> None:
         """Initialize strategy guard based on config: auto-route for mapped markets, or legacy opt-in."""
         from modules.market_strategy_map import has_strategy_mapping
@@ -227,7 +273,12 @@ class ApexRunner:
                 log.info("Restored Guard bridge for slot %d (%s)", slot.slot_id, slot.instrument)
 
     def _preflight_check(self) -> None:
-        """Verify account has funds before starting. Warns loudly if not."""
+        """Verify account has funds before starting. Warns loudly if not.
+
+        Also sets self._error_state / self._can_trade so the dashboard FE
+        can render the degraded state via the /metrics endpoint instead of
+        showing "RUNNING" while the agent silently fails to place orders.
+        """
         try:
             account = self.hl.get_account_state()
             # get_account_state() returns processed dict with "account_value" key
@@ -240,16 +291,31 @@ class ApexRunner:
                         "** NO FUNDS DETECTED ** "
                         "On testnet, claim USDyP first: hl setup claim-usdyp"
                     )
+                    detail = "Testnet account is empty. Run: hl setup claim-usdyp"
                 else:
                     log.warning(
                         "** NO FUNDS DETECTED ** "
                         "On mainnet, deposit USDC via the Hyperliquid web UI"
                     )
-                log.warning("Without funds, all orders will fail silently.")
+                    detail = "Account balance is $0. Deposit USDC to start trading."
+                log.warning("Without funds, orders will be rejected.")
+                self._error_state = "unfunded"
+                self._error_detail = detail
+                self._can_trade = False
             else:
                 log.info("Account balance: $%.2f", balance)
+                self._error_state = None
+                self._error_detail = None
+                self._can_trade = True
         except Exception as e:
-            log.warning("Preflight balance check failed: %s (continuing anyway)", e)
+            # Don't claim the agent is broken just because the balance probe
+            # failed — the network might be flaky. Log a distinct state so
+            # the FE can show "health check failed, retrying" instead of
+            # silently treating the agent as healthy.
+            log.warning("Preflight balance check failed: %s (continuing)", e)
+            self._error_state = "preflight_failed"
+            self._error_detail = f"Could not query HL account state: {e}"
+            # Leave can_trade alone — we don't know either way
 
     def run(self, max_ticks: int = 0) -> None:
         """Main loop. Blocks until max_ticks reached or SIGINT."""
@@ -432,6 +498,13 @@ class ApexRunner:
                 "total_trades": self.state.total_trades,
                 "safe_mode": getattr(self.state, "safe_mode", False),
                 "consecutive_timeouts": self._consecutive_timeouts,
+                # Health/error fields surfaced to the dashboard FE so it can
+                # render a banner when the agent is in a degraded state
+                # (unfunded, repeated rejections, etc.) instead of showing
+                # "RUNNING" while orders are silently failing.
+                "error_state": self._error_state,
+                "error_detail": self._error_detail,
+                "can_trade": self._can_trade,
                 "updated_at": int(time.time() * 1000),
             }
             metrics_path = Path(self.data_dir) / "metrics.json"
@@ -888,10 +961,27 @@ class ApexRunner:
             size = (self.config.margin_per_slot * self.config.leverage) / mid
             side = "buy" if action.direction == "long" else "sell"
 
-            # Entry order type: directional strategies use IOC (need immediate fills
-            # on fast-moving assets), pulse/radar use configured default (ALO for rebates)
+            # Entry order type. Original logic was:
+            #   directional sources -> IOC (taker, immediate fill)
+            #   pulse/radar         -> ALO (maker, post-only)
+            # This silently broke the testnet competition because ALO orders
+            # on the 3 yex markets almost never cross the spread — they sit
+            # resting at the mid for one tick, get cancelled by the runner,
+            # and the agent reports "Entry fill failed" forever. Switching
+            # to IOC across the board for low-liquidity / competition mode
+            # makes pulse/radar entries cross the spread and actually fill.
+            # The maker rebate is meaningless on $1000 positions.
+            #
+            # Honour cfg.entry_order_type when set (lets the competition
+            # preset force "Ioc" for everything).
+            cfg_tif = getattr(self.config, "entry_order_type", "Alo")
             is_directional = action.source not in ("pulse_immediate", "pulse_signal", "radar")
-            entry_tif = "Ioc" if is_directional else getattr(self.config, "entry_order_type", "Alo")
+            if cfg_tif and cfg_tif.lower() == "ioc":
+                entry_tif = "Ioc"
+            elif is_directional:
+                entry_tif = "Ioc"
+            else:
+                entry_tif = cfg_tif
             fill = self.hl.place_order(
                 instrument=action.instrument,
                 side=side,
@@ -934,10 +1024,27 @@ class ApexRunner:
                 log.info("ENTERED slot %d: %s %s @ %.4f size=%.4f (%s)",
                          slot.slot_id, action.direction, action.instrument,
                          float(fill.price), float(fill.quantity), action.reason)
+                # Successful fill clears any prior unfunded/order_rejected
+                # state — the agent is clearly trading.
+                if self._error_state in ("unfunded", "order_rejected"):
+                    self._error_state = None
+                    self._error_detail = None
+                    self._can_trade = True
             else:
                 log.warning("Entry fill failed for %s", action.instrument)
                 slot.status = "empty"
                 slot.instrument = ""
+                # Surface the rejection to the FE. We don't know the HL
+                # rejection reason at this layer (the adapter logs it but
+                # doesn't return it), so use a generic state. Most common
+                # cause is insufficient margin — the dashboard banner can
+                # link to the funding flow.
+                if self._error_state != "unfunded":
+                    self._error_state = "order_rejected"
+                    self._error_detail = (
+                        f"HL rejected entry on {action.instrument}. "
+                        f"Most likely insufficient margin."
+                    )
 
         except Exception as e:
             log.error("Entry failed for %s: %s", action.instrument, e)
