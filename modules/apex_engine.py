@@ -170,10 +170,15 @@ class ApexEngine:
                         reason=f"conviction_collapse: {elapsed_min:.0f}min no signal, ROE={slot.current_roe:.1f}%",
                     )
 
-        # 4. Stagnation
+        # 4. Stagnation TP — winners taking profit
+        # v3: deliberately bypasses min_hold. The hard stop (rule 2) fires
+        # immediately on losses regardless of min_hold, so blocking the
+        # take-profit side here was structurally asymmetric — it cut winners
+        # slowly while losers stopped on noise. Profitable positions should
+        # be free to crystallise PnL at any time.
         if slot.current_roe >= cfg.stagnation_min_roe and slot.last_progress_ts > 0:
             stagnation_min = (now_ms - slot.last_progress_ts) / 60_000
-            if stagnation_min >= cfg.stagnation_minutes and not under_min_hold:
+            if stagnation_min >= cfg.stagnation_minutes:
                 return ApexAction(
                     action="exit", slot_id=slot.slot_id,
                     instrument=slot.instrument, direction=slot.direction,

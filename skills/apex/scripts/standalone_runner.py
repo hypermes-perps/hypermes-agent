@@ -455,6 +455,50 @@ class ApexRunner:
         merged_meta["universe"] = merged_universe
         return [merged_meta, merged_ctxs]
 
+    def _filter_to_allowed(self, all_markets: list) -> list:
+        """Restrict the (universe, ctxs) pair to assets in allowed_instruments.
+
+        Without this, pulse_engine and radar_engine scan the full HL universe
+        (~210 assets) and only filter at the signal-emit step. The agents in
+        the yex testnet competition were producing 0 signals because BTCSWP-
+        USDYP never made it through the radar's `top_n_deep` selection — too
+        many high-volume HL perps competed for the slot. Pre-filtering here
+        focuses both engines on the 3-asset yex universe so radar/pulse score
+        every yex asset on every tick instead of dropping them silently.
+
+        Safe-guarded: returns the input unchanged when allowed_instruments is
+        empty (e.g. mainnet runs that scan the full universe).
+        """
+        allowed = set(self.config.allowed_instruments) if self.config.allowed_instruments else None
+        if not allowed or len(all_markets) < 2:
+            return all_markets
+        universe = all_markets[0].get("universe", [])
+        ctxs = all_markets[1]
+        kept_universe: list = []
+        kept_ctxs: list = []
+        for i, entry in enumerate(universe):
+            try:
+                name = entry.get("name", "") if isinstance(entry, dict) else ""
+            except (AttributeError, TypeError):
+                continue
+            if asset_matches_allowed(name, allowed):
+                kept_universe.append(entry)
+                if i < len(ctxs):
+                    kept_ctxs.append(ctxs[i])
+        if not kept_universe:
+            # Defensive: never collapse to empty — that would silently disable
+            # trading instead of just narrowing the scan. Fall back to merged
+            # universe so the asymmetry is loud (logged stats remain non-zero).
+            log.warning(
+                "_filter_to_allowed produced empty universe (allowed=%s). "
+                "Falling back to full merged universe.",
+                sorted(allowed),
+            )
+            return all_markets
+        meta = dict(all_markets[0])
+        meta["universe"] = kept_universe
+        return [meta, kept_ctxs]
+
     def _get_all_mids(self) -> dict:
         """Fetch mid prices including HIP-3 DEXs if any are needed."""
         mids = self.hl.get_all_mids()
@@ -687,6 +731,10 @@ class ApexRunner:
         try:
             all_markets = self.hl.get_all_markets()
             all_markets = self._merge_hip3_markets(all_markets)
+            # v3: focus pulse on the explicitly-allowed instruments. Without
+            # this, pulse scans the full HL universe and the few yex assets
+            # we actually trade get drowned out by 207 standard perps.
+            all_markets = self._filter_to_allowed(all_markets)
 
             # Fetch 4h candles for qualifying assets so volume surge detection works
             asset_candles: Dict[str, Dict[str, List[Dict]]] = {}
@@ -744,6 +792,9 @@ class ApexRunner:
 
             all_markets = self.hl.get_all_markets()
             all_markets = self._merge_hip3_markets(all_markets)
+            # v3: same fix as pulse — restrict to allowed_instruments so the
+            # radar's `top_n_deep` slot doesn't get monopolised by HL majors.
+            all_markets = self._filter_to_allowed(all_markets)
 
             # Pre-screen to find which assets need candle data
             assets = self.radar_guard.engine._bulk_screen(all_markets)
@@ -1137,6 +1188,45 @@ class ApexRunner:
                 close_ts=close_ts,
             )
             self.journal_guard.log_entry(journal_entry)
+
+            # Phase 1.1 + 1.2: emit per-trade telemetry to the central
+            # attribution sink with builder-fee-adjusted net PnL. Without
+            # this every preset change is blind. The journal engine itself
+            # only knows gross PnL — we subtract fees here using the actual
+            # entry notional we have on hand.
+            if self.telemetry:
+                try:
+                    notional_usd = float(slot.entry_size or 0.0) * float(slot.entry_price or 0.0)
+                    # 10 bps builder fee per side (entry + exit) = 20 bps
+                    # round-trip. Source of truth: BuilderFeeConfig.fee_bps
+                    # in cli/builder_fee.py. Hardcoding here so the emitter
+                    # has zero coupling to order construction.
+                    fee_bps_round_trip = 20.0
+                    fees_estimate = notional_usd * fee_bps_round_trip / 10_000.0
+                    net_pnl = pnl - fees_estimate
+                    self.telemetry.trade({
+                        "instrument": slot.instrument,
+                        "direction": slot.direction,
+                        "entry_source": slot.entry_source or "unknown",
+                        "entry_signal_score": slot.entry_signal_score,
+                        "signal_quality": journal_entry.signal_quality,
+                        "close_reason": reason,
+                        "entry_price": slot.entry_price,
+                        "exit_price": slot.current_price,
+                        "entry_size": slot.entry_size,
+                        "notional_usd": round(notional_usd, 2),
+                        "gross_pnl": round(pnl, 4),
+                        "fees_estimate": round(fees_estimate, 4),
+                        "net_pnl": round(net_pnl, 4),
+                        "roe_pct": slot.current_roe,
+                        "holding_ms": close_ts - slot.entry_ts,
+                        "entry_ts": slot.entry_ts,
+                        "close_ts": close_ts,
+                        "preset_name": getattr(self.config, "preset_name", "") or "",
+                        "leverage": self.config.leverage,
+                    })
+                except Exception as te:
+                    log.debug("trade telemetry emit failed (non-fatal): %s", te)
 
             # Notable trade -> memory + obsidian
             if abs(pnl) > self.config.margin_per_slot * 0.1:

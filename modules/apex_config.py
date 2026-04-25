@@ -154,19 +154,39 @@ APEX_PRESETS: Dict[str, ApexConfig] = {
         daily_loss_limit=1000.0,
     ),
     # Tuned for testnet competitions on the yex HIP-3 dex with 3 markets
-    # (VXX, US3M, BTCSWP). Much faster radar cycle, much lower entry
-    # threshold, and shorter min hold so the agent rotates frequently and
-    # produces visible PnL movement during the competition window.
-    # Pair with --markets VXX-USDYP,US3M-USDYP,BTCSWP-USDYP.
+    # (VXX, US3M, BTCSWP). Pair with --markets VXX-USDYP,US3M-USDYP,BTCSWP-USDYP.
+    #
+    # Tuning history:
+    #   v1 (2026-04-08): leverage=15, radar=110, pulse=45, min_hold=10min,
+    #     daily_loss=2000. Demonstrated agents trade but every cohort agent
+    #     bled $100-$440 in the first hour because the high leverage + low
+    #     entry threshold + 10-min churn was a losing combination on the
+    #     low-liquidity yex markets.
+    #
+    #   v2 (2026-04-09): drop leverage to 5x, raise entry thresholds, longer
+    #     min hold, much tighter daily loss limit so losing agents pause
+    #     instead of bleeding through their entire balance.
+    #
+    #   v3 (2026-04-09): Phase 0 of profitability roadmap. Baseline snapshot
+    #     showed 0/14 agents profitable, fleet PnL -$9.4k. Root cause: exit
+    #     logic structurally asymmetric. Hard stop at -5% ROE on 5x lev = -1%
+    #     price move; +0.5% entry slippage + fees meant positions stopped on
+    #     noise within minutes, while stagnation TP at +3% ROE was blocked
+    #     by the 30-min min_hold. v3 fixes:
+    #       - leverage 5x → 3x (more headroom per stop)
+    #       - max_negative_roe -5% → -10% (wider stop, ~3.3% price at 3x)
+    #       - SLIPPAGE_FACTOR 1.005 → 1.002 (in hl_adapter.py)
+    #       - stagnation TP allowed to fire during min_hold (apex_engine.py)
     "competition": ApexConfig(
         max_slots=3,
-        leverage=15.0,
-        radar_score_threshold=110,        # was 150 in aggressive
-        pulse_confidence_threshold=45.0,  # was 60 in aggressive
+        leverage=3.0,                     # v3: 5.0 → 3.0 (more headroom per stop)
+        max_negative_roe=-10.0,           # v3: -5.0 → -10.0 (~3.3% price at 3x lev)
+        radar_score_threshold=140,        # v2: was 110 — only stronger signals
+        pulse_confidence_threshold=60.0,  # v2: was 45.0 — same logic for pulse
         radar_interval_ticks=5,           # was 15 — scan 3x more often
-        min_hold_ms=600_000,              # 10 min instead of 45 — faster rotation
+        min_hold_ms=1_800_000,            # v2: was 600_000 (10min) -> 30 min
         slot_cooldown_ms=60_000,          # 1 min instead of 5
-        daily_loss_limit=2000.0,
+        daily_loss_limit=200.0,           # v2: was 2000 — pause losing agents fast
         # Force IOC orders so entries cross the spread and fill immediately.
         # The default ALO posts limit orders that almost never fill on the
         # low-liquidity yex markets and the runner cancels them after one
