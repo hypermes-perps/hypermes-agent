@@ -100,6 +100,13 @@ class ApexConfig:
     excluded_instruments: List[str] = field(default_factory=list)
     allowed_instruments: List[str] = field(default_factory=list)
 
+    # Signal direction flip — when True, invert all entry directions
+    # (long→short, short→long).  On thin markets like YEX BTCSWP, pulse
+    # signals (FUNDING_FLIP, VOLUME_SURGE, OI_DELTA) fire at move *exhaustion*,
+    # not initiation.  Flipping direction converts a 0% win-rate signal set
+    # into a mean-reversion strategy.
+    flip_signal_direction: bool = False
+
     # Preset name (optional). When set, the standalone runner uses this to
     # look up matching pulse/radar presets in PULSE_PRESETS / RADAR_PRESETS
     # at boot. Set automatically by `apex run --preset <name>` via _run_apex.
@@ -181,9 +188,15 @@ APEX_PRESETS: Dict[str, ApexConfig] = {
         max_slots=3,
         leverage=3.0,                     # v3: 5.0 → 3.0 (more headroom per stop)
         max_negative_roe=-10.0,           # v3: -5.0 → -10.0 (~3.3% price at 3x lev)
-        radar_score_threshold=140,        # v2: was 110 — only stronger signals
-        pulse_confidence_threshold=60.0,  # v2: was 45.0 — same logic for pulse
-        radar_interval_ticks=5,           # was 15 — scan 3x more often
+        flip_signal_direction=True,       # v4: 0/64 wins = inverted signals; flip for mean-reversion
+        # v3.1: DISABLE RADAR. Attribution data over 64 trades showed radar
+        # produced 51 trades with 0% win rate and -$17/trade avg. It fires
+        # ~once every 9 min and every entry is wrong-way. Score threshold
+        # doesn't help — the fundamental signal has no edge on BTCSWP.
+        # Set threshold impossibly high so no radar entry ever qualifies.
+        radar_score_threshold=130,        # v4.2: lowered from 170, market too quiet at 170
+        pulse_confidence_threshold=45.0,  # v3: 60 → 45 (observed FUNDING_FLIP on BTCSWP at conf=50)
+        radar_interval_ticks=5,           # still scanning for attribution data
         min_hold_ms=1_800_000,            # v2: was 600_000 (10min) -> 30 min
         slot_cooldown_ms=60_000,          # 1 min instead of 5
         daily_loss_limit=200.0,           # v2: was 2000 — pause losing agents fast
