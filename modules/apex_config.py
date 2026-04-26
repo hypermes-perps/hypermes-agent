@@ -188,14 +188,13 @@ APEX_PRESETS: Dict[str, ApexConfig] = {
         max_slots=3,
         leverage=3.0,                     # v3: 5.0 → 3.0 (more headroom per stop)
         max_negative_roe=-10.0,           # v3: -5.0 → -10.0 (~3.3% price at 3x lev)
-        flip_signal_direction=True,       # v4: 0/64 wins = inverted signals; flip for mean-reversion
-        # v3.1: DISABLE RADAR. Attribution data over 64 trades showed radar
-        # produced 51 trades with 0% win rate and -$17/trade avg. It fires
-        # ~once every 9 min and every entry is wrong-way. Score threshold
-        # doesn't help — the fundamental signal has no edge on BTCSWP.
-        # Set threshold impossibly high so no radar entry ever qualifies.
-        radar_score_threshold=130,        # v4.2: lowered from 170, market too quiet at 170
-        pulse_confidence_threshold=45.0,  # v3: 60 → 45 (observed FUNDING_FLIP on BTCSWP at conf=50)
+        flip_signal_direction=False,       # v5: reverted — signals are noise, not inverted
+        # v6: Pulse/radar have no directional edge on YEX (100+ trades, 0% WR).
+        # Strategy system takes over: per-agent strategies via STRATEGY_NAMES env.
+        radar_score_threshold=9999,       # disabled — no edge
+        pulse_confidence_threshold=95.0,  # disabled — no edge
+        strategy_enabled=True,            # v6: enable strategy system
+        reflect_auto_adjust=False,        # disable — fights manual tuning
         radar_interval_ticks=5,           # still scanning for attribution data
         min_hold_ms=1_800_000,            # v2: was 600_000 (10min) -> 30 min
         slot_cooldown_ms=60_000,          # 1 min instead of 5
