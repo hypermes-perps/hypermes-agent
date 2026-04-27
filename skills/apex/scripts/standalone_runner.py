@@ -242,10 +242,19 @@ class ApexRunner:
         self._can_trade: bool = True
 
     def _init_strategy_guard(self) -> None:
-        """Initialize strategy guard based on config: auto-route for mapped markets, or legacy opt-in."""
+        """Initialize strategy guard based on config: explicit names first, then auto-route."""
         from modules.market_strategy_map import has_strategy_mapping
 
-        if (self.config.strategy_enabled
+        # Explicit strategy_names takes priority over auto-routing.
+        # This allows per-agent strategy assignment via STRATEGY_NAMES env var
+        # even when allowed_instruments has entries in MARKET_STRATEGY_MAP.
+        if self.config.strategy_enabled and self.config.strategy_names:
+            self.strategy_guard = StrategyGuard(
+                strategy_names=self.config.strategy_names,
+                enabled=True,
+            )
+            log.info("Strategy guard (explicit): %s", self.config.strategy_names)
+        elif (self.config.strategy_enabled
                 and self.config.allowed_instruments
                 and has_strategy_mapping(self.config.allowed_instruments)):
             self.strategy_guard = StrategyGuard(
@@ -253,12 +262,6 @@ class ApexRunner:
                 enabled=True,
             )
             log.info("Strategy guard (auto-routed): markets=%s", self.config.allowed_instruments)
-        elif self.config.strategy_enabled and self.config.strategy_names:
-            self.strategy_guard = StrategyGuard(
-                strategy_names=self.config.strategy_names,
-                enabled=True,
-            )
-            log.info("Strategy guard (explicit): %d strategies loaded", len(self.strategy_guard.strategies))
         else:
             self.strategy_guard = None
 
