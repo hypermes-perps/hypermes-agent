@@ -592,6 +592,9 @@ class ApexRunner:
         if self.strategy_guard and tick % self.config.strategy_interval_ticks == 0:
             try:
                 all_markets = self.hl.get_all_markets()
+                # HIP-3 dex assets (BTCSWP, VXX, US3M) aren't in universal
+                # perps. Merge dex data so strategies can see them.
+                all_markets = self._merge_hip3_markets(all_markets)
                 strategy_signals = self.strategy_guard.scan(
                     all_markets=all_markets,
                     slot_prices=slot_prices,

@@ -192,9 +192,9 @@ APEX_PRESETS: Dict[str, ApexConfig] = {
         # v6: Pulse/radar have no directional edge on YEX (100+ trades, 0% WR).
         # Strategy system takes over: per-agent strategies via STRATEGY_NAMES env.
         radar_score_threshold=9999,       # disabled — no edge
-        pulse_confidence_threshold=95.0,  # disabled — no edge
+        pulse_confidence_threshold=50.0,  # v6.8: lowered — strategies use this threshold too
         strategy_enabled=True,            # v6: enable strategy system
-        strategy_interval_ticks=15,       # v6.5: scan every 15 min — 18 agents overwhelm HL at 5
+        strategy_interval_ticks=3,        # v6.6: scan every 3 min — 429 retry makes this safe
         reflect_auto_adjust=False,        # disable — fights manual tuning
         radar_interval_ticks=5,           # still scanning for attribution data
         min_hold_ms=1_800_000,            # v2: was 600_000 (10min) -> 30 min
