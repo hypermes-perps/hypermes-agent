@@ -138,7 +138,7 @@ class TestMacOSKeychainBackend:
         be = MacOSKeychainBackend()
 
         dump_output = '''keychain: "/Users/test/Library/Keychains/login.keychain-db"
-    "svce"<blob>="agent-cli"
+    "svce"<blob>="hypermes-agent"
     "acct"<blob>="0xABCdef1234567890ABCdef1234567890ABCdef12"
 keychain: "/Users/test/Library/Keychains/login.keychain-db"
     "svce"<blob>="other-service"

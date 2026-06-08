@@ -1,7 +1,7 @@
-"""Agent telemetry — registration + heartbeat for Nunchi tracking.
+"""Agent telemetry — registration + heartbeat for Hypermes tracking.
 
 Fire-and-forget HTTP calls on daemon threads. Never blocks trading.
-Opt-out via NUNCHI_TELEMETRY=false environment variable.
+Opt-out via HYPERMES_TELEMETRY=false environment variable.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from threading import Thread
 
 log = logging.getLogger("telemetry")
 
-TELEMETRY_BASE = os.environ.get("NUNCHI_TELEMETRY_URL", "")
+TELEMETRY_BASE = os.environ.get("HYPERMES_TELEMETRY_URL", "")
 HEARTBEAT_INTERVAL_TICKS = 10
 TIMEOUT_S = 5
 
@@ -23,7 +23,7 @@ TIMEOUT_S = 5
 def _get_version() -> str:
     try:
         from importlib.metadata import version
-        return version("yex-trader")
+        return version("hypermes-agent")
     except Exception:
         pass
     try:
@@ -69,7 +69,7 @@ class TelemetryClient:
 
     @property
     def enabled(self) -> bool:
-        if os.environ.get("NUNCHI_TELEMETRY", "true").lower() == "false":
+        if os.environ.get("HYPERMES_TELEMETRY", "true").lower() == "false":
             return False
         return bool(TELEMETRY_BASE)
 

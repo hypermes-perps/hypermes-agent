@@ -1,6 +1,6 @@
 # Tools
 
-## MCP Server: nunchi_trading
+## MCP Server: hypermes_trading
 
 The primary tool provider. Exposes 13 trading tools via Model Context Protocol:
 

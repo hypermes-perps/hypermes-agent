@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 class BuilderFeeConfig:
     """Builder fee settings. Loaded from env vars or YAML config."""
 
-    builder_address: str = "0x0D1DB1C800184A203915757BbbC0ee3A8E12FfB0"  # Nunchi fee wallet
+    builder_address: str = "0x0D1DB1C800184A203915757BbbC0ee3A8E12FfB0"  # Hypermes fee wallet
     fee_rate_tenths_bps: int = 100  # 10 bps (0.1%)
 
     @property

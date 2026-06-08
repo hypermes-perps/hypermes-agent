@@ -29,13 +29,13 @@ Install Python dependencies and verify the CLI works.
 
 **Option A — Shell script (recommended):**
 ```bash
-cd ~/agent-cli
+cd ~/hypermes-agent
 bash scripts/bootstrap.sh
 ```
 
 **Option B — Manual:**
 ```bash
-cd ~/agent-cli
+cd ~/hypermes-agent
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .

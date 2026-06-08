@@ -116,7 +116,7 @@ def setup_bootstrap():
         typer.echo(f"OK  In venv: {sys.prefix}")
 
     # 3. Install package
-    typer.echo("Installing agent-cli ...")
+    typer.echo("Installing hypermes-agent ...")
     result = subprocess.run(
         [sys.executable, "-m", "pip", "install", "-e", str(project_root), "--quiet"],
         capture_output=True, text=True,
@@ -160,7 +160,7 @@ def setup_claim_usdyp():
 
     typer.echo(f"Claiming USDyP for {address} ...")
 
-    url = "https://api-temp.nunchi.trade/api/v1/yex/usdyp-claim"
+    url = "https://api.hypermes.xyz/api/v1/yex/usdyp-claim"
     payload = json.dumps({"userAddress": address}).encode()
     req = urllib.request.Request(
         url,

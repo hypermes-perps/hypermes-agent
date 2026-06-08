@@ -53,13 +53,13 @@ class TestEnabled:
     def test_disabled_via_env(self):
         c = _make_client()
         with patch("cli.telemetry.TELEMETRY_BASE", "https://example.com/telemetry"):
-            with patch.dict(os.environ, {"NUNCHI_TELEMETRY": "false"}):
+            with patch.dict(os.environ, {"HYPERMES_TELEMETRY": "false"}):
                 assert c.enabled is False
 
     def test_disabled_case_insensitive(self):
         c = _make_client()
         with patch("cli.telemetry.TELEMETRY_BASE", "https://example.com/telemetry"):
-            with patch.dict(os.environ, {"NUNCHI_TELEMETRY": "False"}):
+            with patch.dict(os.environ, {"HYPERMES_TELEMETRY": "False"}):
                 assert c.enabled is False
 
 
@@ -82,14 +82,14 @@ class TestRegisterNoBlock:
 
     def test_register_skipped_when_disabled(self):
         c = _make_client()
-        with patch.dict(os.environ, {"NUNCHI_TELEMETRY": "false"}):
+        with patch.dict(os.environ, {"HYPERMES_TELEMETRY": "false"}):
             with patch("cli.telemetry.Thread") as mock_thread:
                 c.register()
                 mock_thread.assert_not_called()
 
     def test_heartbeat_skipped_when_disabled(self):
         c = _make_client()
-        with patch.dict(os.environ, {"NUNCHI_TELEMETRY": "false"}):
+        with patch.dict(os.environ, {"HYPERMES_TELEMETRY": "false"}):
             with patch("cli.telemetry.Thread") as mock_thread:
                 c.heartbeat(10, 600.0, 2)
                 mock_thread.assert_not_called()
@@ -101,7 +101,7 @@ class TestDeployMode:
             assert _detect_deploy_mode() == "local"
 
     def test_railway(self):
-        with patch.dict(os.environ, {"RAILWAY_SERVICE_NAME": "agent-cli"}):
+        with patch.dict(os.environ, {"RAILWAY_SERVICE_NAME": "hypermes-agent"}):
             assert _detect_deploy_mode() == "railway"
 
     def test_openclaw(self):

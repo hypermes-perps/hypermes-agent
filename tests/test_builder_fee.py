@@ -19,7 +19,7 @@ from cli.builder_fee import BuilderFeeConfig
 
 class TestBuilderFeeConfig:
     def test_defaults_disabled(self):
-        """Builder fee enabled by default with Nunchi fee wallet."""
+        """Builder fee enabled by default with Hypermes fee wallet."""
         cfg = BuilderFeeConfig()
         assert cfg.enabled
         assert cfg.builder_address == "0x0D1DB1C800184A203915757BbbC0ee3A8E12FfB0"
@@ -70,7 +70,7 @@ class TestBuilderFeeConfig:
             assert cfg.fee_bps == 1.5
 
     def test_from_env_missing_uses_defaults(self):
-        """Without env vars, builder fee uses hardcoded Nunchi defaults."""
+        """Without env vars, builder fee uses hardcoded Hypermes defaults."""
         with patch.dict(os.environ, {}, clear=True):
             cfg = BuilderFeeConfig.from_env()
             assert cfg.enabled

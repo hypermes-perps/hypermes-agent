@@ -3,14 +3,14 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "yex-trader"
+name = "hypermes-agent"
 version = "0.1.0"
 description = "Autonomous Hyperliquid trading CLI — deterministic and LLM-powered strategies for HL perps and YEX markets"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
-    { name = "Nunchi Trade", email = "dev@nunchi.trade" },
+    { name = "Hypermes", email = "dev@hypermes.xyz" },
 ]
 keywords = ["hyperliquid", "trading", "market-making", "defi", "yex", "llm"]
 classifiers = [
@@ -41,8 +41,8 @@ dev = ["pytest>=7.0", "ruff>=0.4.0", "mypy>=1.8.0"]
 hl = "cli.main:main"
 
 [project.urls]
-Homepage = "https://github.com/Nunchi-trade/agent-cli"
-Repository = "https://github.com/Nunchi-trade/agent-cli"
+Homepage = "https://github.com/hypermes-perps/hypermes-agent"
+Repository = "https://github.com/hypermes-perps/hypermes-agent"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

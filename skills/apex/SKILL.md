@@ -136,8 +136,8 @@ APEX is the top-level orchestrator. It composes Radar (opportunity finding), Pul
 
 ```bash
 # Start APEX at market open, stop at EOD
-0 8 * * 1-5  cd ~/agent-cli && source .venv/bin/activate && hl apex run --budget 5000 >> logs/apex.log 2>&1
+0 8 * * 1-5  cd ~/hypermes-agent && source .venv/bin/activate && hl apex run --budget 5000 >> logs/apex.log 2>&1
 0 20 * * 1-5 pkill -f "hl apex run"
 # Nightly REFLECT review
-55 23 * * * cd ~/agent-cli && source .venv/bin/activate && hl reflect run >> logs/reflect.log 2>&1
+55 23 * * * cd ~/hypermes-agent && source .venv/bin/activate && hl reflect run >> logs/reflect.log 2>&1
 ```

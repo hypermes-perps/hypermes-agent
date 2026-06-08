@@ -4,7 +4,7 @@ Computes trading performance metrics from raw trade records.
 FIFO round-trip pairing, holding-period buckets, direction analysis,
 fee drag, monster-trade dependency, and recommendation generation.
 
-100% original implementation — built for agent-cli's trade log format.
+100% original implementation — built for hypermes-agent's trade log format.
 """
 from __future__ import annotations
 

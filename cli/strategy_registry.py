@@ -96,7 +96,7 @@ STRATEGY_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# YEX market definitions — Nunchi HIP-3 yield perpetuals
+# YEX market definitions — Hypermes HIP-3 yield perpetuals
 YEX_MARKETS: Dict[str, Dict[str, str]] = {
     "VXX-USDYP": {
         "hl_coin": "yex:VXX",

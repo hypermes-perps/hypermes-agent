@@ -22,7 +22,7 @@ Autonomous Hyperliquid trading via agent-cli. 14 strategies across market making
 ## Quick Start (Agent-Friendly)
 
 ```bash
-cd ~/agent-cli
+cd ~/hypermes-agent
 bash scripts/bootstrap.sh           # Creates venv, installs, validates
 hl wallet auto --save-env             # Creates wallet, saves creds to ~/.hl-agent/env
 hl setup claim-usdyp                 # Claim testnet USDyP
@@ -36,7 +36,7 @@ For full step-by-step onboarding, see `skills/onboard/SKILL.md`.
 ## Setup (Manual)
 
 ```bash
-cd ~/agent-cli && pip install -e .
+cd ~/hypermes-agent && pip install -e .
 hl setup check  # Validate environment
 ```
 

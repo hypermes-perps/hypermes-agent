@@ -90,7 +90,7 @@ class EncryptedKeystoreBackend(KeystoreBackend):
 class MacOSKeychainBackend(KeystoreBackend):
     """macOS Keychain via the `security` CLI tool."""
 
-    SERVICE = "agent-cli"
+    SERVICE = "hypermes-agent"
 
     def name(self) -> str:
         return "keychain"

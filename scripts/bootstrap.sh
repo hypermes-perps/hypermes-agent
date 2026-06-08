@@ -48,7 +48,7 @@ else
 fi
 
 # 3. Install package
-echo "Installing agent-cli ..."
+echo "Installing hypermes-agent ..."
 if [ "$USE_UV" -eq 1 ]; then
     uv pip install -e . --quiet 2>&1 | tail -3
 else

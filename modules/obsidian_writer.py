@@ -15,7 +15,7 @@ class ObsidianWriter:
 
     def __init__(self, vault_path: str = "~/obsidian-vault"):
         self.vault_path = Path(vault_path).expanduser()
-        self._project_dir = self.vault_path / "projects" / "agent-cli"
+        self._project_dir = self.vault_path / "projects" / "hypermes-agent"
 
     @property
     def available(self) -> bool:

@@ -2,7 +2,7 @@
 name: opportunity-radar
 version: 1.0.0
 description: Screens all Hyperliquid perps and surfaces top trading setups
-author: Nunchi Trade
+author: Hypermes
 tags: [radar, screener, technicals, opportunities, hyperliquid]
 ---
 
@@ -119,5 +119,5 @@ Radar is a sub-component of APEX (runs every 15 ticks). Can also be used standal
 
 ```bash
 # Standalone radar every 15 min during trading hours
-*/15 8-20 * * 1-5 cd ~/agent-cli && hl radar once --json >> data/radar/scans.jsonl 2>&1
+*/15 8-20 * * 1-5 cd ~/hypermes-agent && hl radar once --json >> data/radar/scans.jsonl 2>&1
 ```

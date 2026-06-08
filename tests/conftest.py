@@ -1,4 +1,4 @@
-"""Shared fixtures for the agent-cli test suite."""
+"""Shared fixtures for the hypermes-agent test suite."""
 from __future__ import annotations
 
 import time

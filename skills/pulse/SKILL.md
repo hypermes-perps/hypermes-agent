@@ -2,7 +2,7 @@
 name: pulse
 version: 1.0.0
 description: Detects assets with sudden capital inflow via OI/volume/funding proxy signals
-author: Nunchi Trade
+author: Hypermes
 tags: [pulse, detector, smart-money, signals, hyperliquid]
 ---
 
@@ -97,5 +97,5 @@ Pulse is a sub-component of APEX (runs every tick). Pairs with Radar — Radar i
 
 ```bash
 # Standalone Pulse scan every 60s during trading hours
-* 8-20 * * 1-5 cd ~/agent-cli && hl pulse once --json >> data/pulse/signals.jsonl 2>&1
+* 8-20 * * 1-5 cd ~/hypermes-agent && hl pulse once --json >> data/pulse/signals.jsonl 2>&1
 ```

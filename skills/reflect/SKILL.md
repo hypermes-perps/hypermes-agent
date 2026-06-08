@@ -2,7 +2,7 @@
 name: reflect-performance-review
 version: 1.0.0
 description: Reflect, Evaluate, Fine-tune, Learn, Evolve, Correct, Transform — nightly automated performance review
-author: Nunchi Trade
+author: Hypermes
 tags: [reflect, performance, review, analytics, self-improvement]
 cron: "55 23 * * *"
 dependencies:
@@ -102,5 +102,5 @@ REFLECT is the learning layer of the APEX system. Run REFLECT nightly after APEX
 
 ```bash
 # Nightly REFLECT review at 11:55 PM
-55 23 * * * cd ~/agent-cli && source .venv/bin/activate && hl reflect run >> logs/reflect.log 2>&1
+55 23 * * * cd ~/hypermes-agent && source .venv/bin/activate && hl reflect run >> logs/reflect.log 2>&1
 ```

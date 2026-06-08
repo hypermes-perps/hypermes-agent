@@ -1,7 +1,7 @@
 {
-  "name": "nunchi-openclaw-railway",
+  "name": "hypermes-openclaw-railway",
   "version": "0.1.0",
-  "description": "One-click OpenClaw trading agent for Hyperliquid — powered by Nunchi agent-cli",
+  "description": "One-click OpenClaw trading agent for Hyperliquid — powered by Hypermes agent-cli",
   "private": true,
   "scripts": {
     "start": "node src/server.js"

@@ -1,4 +1,4 @@
-"""MCP server for agent-cli — exposes trading tools via Model Context Protocol.
+"""MCP server for hypermes-agent — exposes trading tools via Model Context Protocol.
 
 Fast tools (account, strategies, builder, wallet, setup) call Python directly.
 Long-running tools (run_strategy, apex_run, radar, reflect) use subprocess.
@@ -25,7 +25,7 @@ def create_mcp_server():
     """Create and configure the FastMCP server."""
     from mcp.server.fastmcp import FastMCP
 
-    mcp = FastMCP("yex-trader", instructions="Autonomous Hyperliquid trading CLI — 14 strategies, APEX orchestrator, REFLECT reviews.")
+    mcp = FastMCP("hypermes-agent", instructions="Autonomous Hyperliquid trading CLI — 14 strategies, APEX orchestrator, REFLECT reviews.")
 
     # ------------------------------------------------------------------
     # Fast tools — call Python directly (no subprocess overhead)

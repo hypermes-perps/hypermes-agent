@@ -11,7 +11,7 @@ compatibility: >-
   Requires python3 and yex-trader (agent-cli) installed.
   Hyperliquid perp positions. Direct HL API — no mcporter needed.
 metadata:
-  author: Nunchi Trade
+  author: Hypermes
   version: "1.0.0"
   platform: yex-trader
   exchange: hyperliquid

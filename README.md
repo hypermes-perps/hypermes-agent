@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="Nunchi" width="480" />
+  <img src="assets/logo.png" alt="Hypermes" width="480" />
 </p>
 
 <h3 align="center">Autonomous Trading Agent for Hyperliquid</h3>
@@ -9,11 +9,11 @@
 </p>
 
 <p align="center">
-  <a href="https://docs.nunchi.trade"><strong>Docs</strong></a> &nbsp;&bull;&nbsp;
-  <a href="https://yex.nunchi.trade"><strong>App</strong></a> &nbsp;&bull;&nbsp;
-  <a href="https://research.nunchi.trade"><strong>Research</strong></a> &nbsp;&bull;&nbsp;
-  <a href="https://discord.gg/nunchi"><strong>Discord</strong></a> &nbsp;&bull;&nbsp;
-  <a href="https://x.com/nunchi"><strong>X</strong></a>
+  <a href="https://docs.hypermes.xyz"><strong>Docs</strong></a> &nbsp;&bull;&nbsp;
+  <a href="https://app.hypermes.xyz"><strong>App</strong></a> &nbsp;&bull;&nbsp;
+  <a href="https://research.hypermes.xyz"><strong>Research</strong></a> &nbsp;&bull;&nbsp;
+  <a href="https://discord.gg/hypermes"><strong>Discord</strong></a> &nbsp;&bull;&nbsp;
+  <a href="https://x.com/hypermes_perps"><strong>X</strong></a>
 </p>
 
 <p align="center">
@@ -25,21 +25,21 @@
 </p>
 
 <p align="center">
-  <a href="https://railway.com/new/template?template=https://github.com/Nunchi-trade/agent-cli&envs=HL_PRIVATE_KEY,HL_TESTNET,RUN_MODE,APEX_PRESET&HL_TESTNETDefault=true&RUN_MODEDefault=apex&APEX_PRESETDefault=default">
+  <a href="https://railway.com/new/template?template=https://github.com/hypermes-perps/hypermes-agent&envs=HL_PRIVATE_KEY,HL_TESTNET,RUN_MODE,APEX_PRESET&HL_TESTNETDefault=true&RUN_MODEDefault=apex&APEX_PRESETDefault=default">
     <img src="https://railway.com/button.svg" alt="Deploy on Railway" height="36" />
   </a>
 </p>
 
 ---
 
-Ship market-making, momentum, arbitrage, and LLM-powered strategies on [Hyperliquid](https://hyperliquid.xyz) perps and [YEX](https://yex.nunchi.trade) yield markets. Full autonomous stack: Guard trailing stops, Radar opportunity screening, Pulse momentum detection, APEX orchestrator, REFLECT performance review. Works as a standalone CLI, a [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skill, an [OpenClaw](https://agentskills.io) AgentSkill, or an MCP server.
+Ship market-making, momentum, arbitrage, and LLM-powered strategies on [Hyperliquid](https://hyperliquid.xyz) perps and [YEX](https://app.hypermes.xyz) yield markets. Full autonomous stack: Guard trailing stops, Radar opportunity screening, Pulse momentum detection, APEX orchestrator, REFLECT performance review. Works as a standalone CLI, a [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skill, an [OpenClaw](https://agentskills.io) AgentSkill, or an MCP server.
 
 ---
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/Nunchi-trade/agent-cli.git && cd agent-cli
+git clone https://github.com/hypermes-perps/hypermes-agent.git && cd hypermes-agent
 bash scripts/bootstrap.sh        # Creates venv, installs, validates
 ```
 
@@ -160,27 +160,27 @@ Built on the open [Agent Skills](https://agentskills.io) standard. Each skill is
 Grab the raw URL and go:
 
 ```
-https://raw.githubusercontent.com/Nunchi-trade/agent-cli/main/skills/onboard/SKILL.md
-https://raw.githubusercontent.com/Nunchi-trade/agent-cli/main/skills/apex/SKILL.md
-https://raw.githubusercontent.com/Nunchi-trade/agent-cli/main/skills/radar/SKILL.md
-https://raw.githubusercontent.com/Nunchi-trade/agent-cli/main/skills/pulse/SKILL.md
-https://raw.githubusercontent.com/Nunchi-trade/agent-cli/main/skills/guard/SKILL.md
-https://raw.githubusercontent.com/Nunchi-trade/agent-cli/main/skills/reflect/SKILL.md
+https://raw.githubusercontent.com/hypermes-perps/hypermes-agent/main/skills/onboard/SKILL.md
+https://raw.githubusercontent.com/hypermes-perps/hypermes-agent/main/skills/apex/SKILL.md
+https://raw.githubusercontent.com/hypermes-perps/hypermes-agent/main/skills/radar/SKILL.md
+https://raw.githubusercontent.com/hypermes-perps/hypermes-agent/main/skills/pulse/SKILL.md
+https://raw.githubusercontent.com/hypermes-perps/hypermes-agent/main/skills/guard/SKILL.md
+https://raw.githubusercontent.com/hypermes-perps/hypermes-agent/main/skills/reflect/SKILL.md
 ```
 
 ### Install a skill (OpenClaw / ClawHub)
 
 ```bash
-clawhub install nunchi-trade/yex-trader
+clawhub install hypermes-perps/hypermes-agent
 ```
 
 ### Install a skill (Claude Code)
 
 ```bash
-git clone https://github.com/Nunchi-trade/agent-cli.git ~/agent-cli
-cd ~/agent-cli && pip install -e .
+git clone https://github.com/hypermes-perps/hypermes-agent.git ~/hypermes-agent
+cd ~/hypermes-agent && pip install -e .
 mkdir -p ~/.claude/skills/yex-trader
-cp ~/agent-cli/cli/skill.md ~/.claude/skills/yex-trader/SKILL.md
+cp ~/hypermes-agent/cli/skill.md ~/.claude/skills/yex-trader/SKILL.md
 ```
 
 ---
@@ -501,7 +501,7 @@ Two deployment options: **headless** (APEX runs strategies directly) or **OpenCl
 
 One-click deploy to run APEX autonomously. No AI model needed — pure deterministic strategy execution.
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https://github.com/Nunchi-trade/agent-cli&envs=HL_PRIVATE_KEY,HL_TESTNET,RUN_MODE,APEX_PRESET&HL_TESTNETDefault=true&RUN_MODEDefault=apex&APEX_PRESETDefault=default)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https://github.com/hypermes-perps/hypermes-agent&envs=HL_PRIVATE_KEY,HL_TESTNET,RUN_MODE,APEX_PRESET&HL_TESTNETDefault=true&RUN_MODEDefault=apex&APEX_PRESETDefault=default)
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
@@ -519,7 +519,7 @@ One-click deploy to run APEX autonomously. No AI model needed — pure determini
 
 One-click deploy of a full OpenClaw agent that uses our CLI as the tool backend. Talk to your trading bot via Telegram — it scans markets, enters trades, manages risk, and learns from its mistakes.
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https://github.com/Nunchi-trade/agent-cli/tree/main/deploy/openclaw-railway&envs=HL_PRIVATE_KEY,AI_PROVIDER,AI_API_KEY,TELEGRAM_BOT_TOKEN,TELEGRAM_USERNAME,HL_TESTNET&HL_TESTNETDefault=true)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https://github.com/hypermes-perps/hypermes-agent/tree/main/deploy/openclaw-railway&envs=HL_PRIVATE_KEY,AI_PROVIDER,AI_API_KEY,TELEGRAM_BOT_TOKEN,TELEGRAM_USERNAME,HL_TESTNET&HL_TESTNETDefault=true)
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
@@ -551,7 +551,7 @@ Both options persist state via Railway volume at `/data` — APEX state, REFLECT
 
 ## YEX Yield Markets
 
-[YEX](https://yex.nunchi.trade) (Nunchi HIP-3) yield perpetuals on Hyperliquid:
+[YEX](https://app.hypermes.xyz) (Hypermes HIP-3) yield perpetuals on Hyperliquid:
 
 | Instrument | HL Coin | Description |
 |------------|---------|-------------|
@@ -670,16 +670,16 @@ Inspired by openclaw, senpi, and claude code.
 
 ## Links
 
-- **Docs** — [docs.nunchi.trade](https://docs.nunchi.trade)
-- **YEX App** — [yex.nunchi.trade](https://yex.nunchi.trade)
-- **Research** — [research.nunchi.trade](https://research.nunchi.trade)
-- **Discord** — [discord.gg/nunchi](https://discord.gg/nunchi)
-- **X** — [@nunchi](https://x.com/nunchi)
-- **GitHub** — [Nunchi-trade](https://github.com/Nunchi-trade)
+- **Docs** — [docs.hypermes.xyz](https://docs.hypermes.xyz)
+- **YEX App** — [app.hypermes.xyz](https://app.hypermes.xyz)
+- **Research** — [research.hypermes.xyz](https://research.hypermes.xyz)
+- **Discord** — [discord.gg/hypermes](https://discord.gg/hypermes)
+- **X** — [@hypermes_perps](https://x.com/hypermes_perps)
+- **GitHub** — [hypermes-perps](https://github.com/hypermes-perps)
 - **Agent Skills Standard** — [agentskills.io](https://agentskills.io)
 
 ---
 
 <p align="center">
-  <sub>Built by <a href="https://nunchi.trade">Nunchi</a> &bull; MIT License</sub>
+  <sub>Built by <a href="https://hypermes.xyz">Hypermes</a> &bull; MIT License</sub>
 </p>

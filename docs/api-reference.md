@@ -1,6 +1,6 @@
-# API Reference — Pulling Data from Nunchi Agents
+# API Reference — Pulling Data from Hypermes Agents
 
-This guide covers every method for pulling data from a running Nunchi agent. Three access paths depending on your deployment and use case:
+This guide covers every method for pulling data from a running Hypermes agent. Three access paths depending on your deployment and use case:
 
 | Path | Protocol | Best For |
 |------|----------|----------|
@@ -255,7 +255,7 @@ Same output as running `hl apex status` in a terminal. Useful for quick checks b
 
 ### `POST /api/skill/install`
 
-Verifies that the agent has the Nunchi trading CLI installed and returns the strategy count.
+Verifies that the agent has the Hypermes trading CLI installed and returns the strategy count.
 
 ```bash
 curl -X POST $AGENT_URL/api/skill/install \
@@ -420,8 +420,8 @@ The leaderboard runs as a **separate microservice** from the agent. It tracks re
 ```bash
 # From the cli-UI repo
 cd deploy
-docker build -t nunchi-leaderboard .
-docker run -p 8090:8090 -v leaderboard-data:/data nunchi-leaderboard
+docker build -t hypermes-leaderboard .
+docker run -p 8090:8090 -v leaderboard-data:/data hypermes-leaderboard
 ```
 
 Or deploy to Railway using the included `railway.toml`.
@@ -563,7 +563,7 @@ curl "http://localhost:8090/api/leaderboard?network=testnet"
 **Frontend polling:**
 
 ```javascript
-const LEADERBOARD_URL = 'https://leaderboard.nunchi.trade';
+const LEADERBOARD_URL = 'https://leaderboard.hypermes.xyz';
 
 async function fetchLeaderboard(network = 'testnet') {
   const res = await fetch(`${LEADERBOARD_URL}/api/leaderboard?network=${network}`);
@@ -613,7 +613,7 @@ Add to your Claude Code MCP configuration:
 ```json
 {
   "mcpServers": {
-    "nunchi": {
+    "hypermes": {
       "command": "hl",
       "args": ["mcp", "serve"]
     }
@@ -999,7 +999,7 @@ for agent in agents:
 import requests
 
 AGENT = "https://your-agent.up.railway.app"
-LEADERBOARD = "https://leaderboard.nunchi.trade"
+LEADERBOARD = "https://leaderboard.hypermes.xyz"
 YOUR_ADDRESS = "0x1234...abcd"
 
 # Get your agent status
